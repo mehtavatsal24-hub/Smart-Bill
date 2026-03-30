@@ -56,7 +56,7 @@ import { CustomerSelector } from "./components/CustomerSelector";
 import { Dashboard } from "./components/Dashboard";
 import { PartyList } from "./components/PartyList";
 import { generateInvoicePDF, downloadInvoicePDF } from "./services/pdfService";
-import { generateInvoiceNotes, analyzeCustomerPatterns } from "./services/geminiService";
+import { generateInvoiceNotes, analyzeCustomerPatterns, analyzeLetterhead } from "./services/geminiService";
 import { HistoryList } from "./components/HistoryList";
 import { PDFCustomizer } from "./components/PDFCustomizer";
 import { saveToCloud, loadFromCloud } from "./services/dbService";
@@ -854,8 +854,21 @@ export default function App() {
   }, [lastExportTimestamp, isFirstLoad]);
 
   // Calculations
-  const handleBusinessChange = (updates: Partial<BusinessDetails>) => {
+  const handleBusinessChange = async (updates: Partial<BusinessDetails>) => {
     setBusiness(prev => ({ ...prev, ...updates }));
+    
+    if (updates.letterhead) {
+      try {
+        const analysis = await analyzeLetterhead(updates.letterhead);
+        setLayoutSettings(prev => ({
+          ...prev,
+          headerHeight: analysis.headerHeight,
+          footerHeight: analysis.footerHeight
+        }));
+      } catch (e) {
+        console.error("Letterhead analysis failed", e);
+      }
+    }
   };
 
   const totals = useMemo(() => {

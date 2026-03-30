@@ -38,6 +38,8 @@ export interface PDFLayoutSettings {
   sectionOrder: PDFSection[];
   accentColor?: string;
   fontFamily?: string;
+  headerHeight?: number; // in mm
+  footerHeight?: number; // in mm
 }
 
 export interface CustomerDetails {

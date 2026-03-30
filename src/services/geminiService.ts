@@ -16,6 +16,51 @@ function getAI() {
   return aiInstance;
 }
 
+export async function analyzeLetterhead(base64Image: string): Promise<{ headerHeight: number; footerHeight: number }> {
+  try {
+    const ai = getAI();
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{
+        parts: [
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: base64Image.split(",")[1] || base64Image,
+            },
+          },
+          {
+            text: `Analyze this company letterhead image. 
+            Estimate the height (in millimeters) of the header area (where logo/company info is) 
+            and the footer area (where address/bank info is at the bottom).
+            Assume the image represents a standard A4 page (210mm x 297mm).
+            Return as a JSON object with 'headerHeight' and 'footerHeight' (numeric values).
+            Be conservative - if the header is large, give more space. 
+            Default to 60 for header and 30 for footer if unsure, but try to be precise based on the visual content.`,
+          }
+        ]
+      }],
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            headerHeight: { type: Type.NUMBER },
+            footerHeight: { type: Type.NUMBER },
+          },
+          required: ["headerHeight", "footerHeight"],
+        },
+      },
+    });
+
+    return JSON.parse(response.text);
+  } catch (error) {
+    console.error("Error analyzing letterhead:", error);
+    return { headerHeight: 65, footerHeight: 40 };
+  }
+}
+
 export async function analyzeDocument(
   file: File, 
   industry?: string,

@@ -76,6 +76,35 @@ export const PDFCustomizer: React.FC<PDFCustomizerProps> = ({ settings, onChange
           ))}
         </div>
 
+        <div className="space-y-3 mb-8">
+          <label className="text-sm font-medium text-zinc-700 block mb-2">
+            Letterhead Margins (mm)
+          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 block mb-1">Header Height</label>
+              <input 
+                type="number" 
+                value={settings.headerHeight || 65} 
+                onChange={(e) => onChange({ ...settings, headerHeight: Number(e.target.value) })}
+                className="w-full p-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 block mb-1">Footer Height</label>
+              <input 
+                type="number" 
+                value={settings.footerHeight || 40} 
+                onChange={(e) => onChange({ ...settings, footerHeight: Number(e.target.value) })}
+                className="w-full p-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-zinc-500 italic">
+            Adjust these if your letterhead header or footer is being overlapped by content.
+          </p>
+        </div>
+
         <div className="space-y-3">
           <label className="text-sm font-medium text-zinc-700 block mb-2">
             Arrange Sections (Drag/Order)
