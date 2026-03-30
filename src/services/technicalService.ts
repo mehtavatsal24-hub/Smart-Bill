@@ -16,7 +16,12 @@ export async function expandTechnicalSpec(input: string, industry?: string, lett
   if (!input || input.trim().length < 2) return input;
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "undefined") {
+      console.error("GEMINI_API_KEY is not defined.");
+      return input;
+    }
+    const ai = new GoogleGenAI({ apiKey });
     const industryContext = industry ? `The business is in the ${industry} industry. ` : "The business is in a general industrial/trading sector. ";
     
     const parts: any[] = [];
