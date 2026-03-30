@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
+    // Fields:
+    //   - business: object (required) - Business details
+    //   - savedCustomers: list (required) - List of saved customers
+    //   - savedSuppliers: list (required) - List of saved suppliers
+    //   - history: list (required) - Document history
+    //   - lastUsedNumbers: map (required) - Last used document numbers
+    //   - priceHistory: list (required) - Price history for products
+    //   - updatedAt: string (required, ISO 8601) - Last sync timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAppOwner() {
+      return isAuthenticated() && 
+             request.auth.token.email == "mehtavatsal24@gmail.com" && 
+             request.auth.token.email_verified == true;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['business', 'savedCustomers', 'savedSuppliers', 'history', 'lastUsedNumbers', 'priceHistory', 'updatedAt']) &&
+             data.business is map &&
+             data.savedCustomers is list &&
+             data.savedSuppliers is list &&
+             data.history is list &&
+             data.lastUsedNumbers is map &&
+             data.priceHistory is list &&
+             data.updatedAt is string;
+    }
+
+    match /users/{userId} {
+      // Users can read/write their own data
+      allow read: if isOwner(userId) || (isAuthenticated() && userId == "owner_data");
+      allow create: if (isOwner(userId) || (userId == "owner_data" && isAppOwner())) && isValidUserProfile(request.resource.data);
+      allow update: if (isOwner(userId) || (userId == "owner_data" && isAppOwner())) && isValidUserProfile(request.resource.data);
+      allow delete: if isOwner(userId) || (userId == "owner_data" && isAppOwner());
+    }
+  }
+}

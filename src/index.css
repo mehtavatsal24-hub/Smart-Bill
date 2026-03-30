@@ -1,0 +1,81 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-brand-50: #f0f4ff;
+  --color-brand-100: #e0e9ff;
+  --color-brand-200: #c1d3ff;
+  --color-brand-300: #92b1ff;
+  --color-brand-400: #5c85ff;
+  --color-brand-500: #3354f4;
+  --color-brand-600: #2539e6;
+  --color-brand-700: #1d2bc7;
+  --color-brand-800: #1c26a0;
+  --color-brand-900: #1c2580;
+  --color-brand-950: #11154d;
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+}
+
+@layer base {
+  body {
+    @apply bg-zinc-50 text-zinc-900 antialiased selection:bg-brand-100 selection:text-brand-900;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-xl border border-white/20 shadow-xl shadow-zinc-200/50;
+  }
+  
+  .btn-primary {
+    @apply bg-brand-600 text-white hover:bg-brand-700 active:scale-95 transition-all duration-200 shadow-lg shadow-brand-500/25 font-semibold px-6 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50 active:scale-95 transition-all duration-200 font-semibold px-6 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer;
+  }
+  
+  .input-field {
+    @apply w-full bg-white border border-zinc-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all duration-200;
+  }
+}
+
+.markdown-body {
+  @apply text-sm leading-relaxed text-zinc-600;
+}
+
+.markdown-body p {
+  @apply mb-2;
+}
+
+.markdown-body table {
+  @apply w-full border-collapse my-3 text-[11px] leading-tight;
+}
+.markdown-body th {
+  @apply bg-zinc-100 border border-zinc-200 p-2 text-left font-bold text-zinc-600 uppercase tracking-wider;
+}
+.markdown-body td {
+  @apply border border-zinc-100 p-2 text-zinc-700;
+}
+.markdown-body tr:nth-child(even) {
+  @apply bg-zinc-50/50;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-zinc-300 rounded-full hover:bg-zinc-400 transition-colors;
+}

@@ -1,0 +1,5 @@
+{
+  "name": "AI Smart Invoice & Challan Generator",
+  "description": "Next-gen AI-powered billing platform for MSMEs. Generate GST-compliant invoices, challans, and quotations with brand-aware AI that understands your company letterhead, extracts data from images, and processes voice commands.",
+  "requestFramePermissions": ["camera", "microphone"]
+}

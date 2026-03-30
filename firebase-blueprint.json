@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User's business data and settings",
+      "type": "object",
+      "properties": {
+        "business": {
+          "type": "object",
+          "description": "Business details"
+        },
+        "savedCustomers": {
+          "type": "array",
+          "description": "List of saved customers"
+        },
+        "savedSuppliers": {
+          "type": "array",
+          "description": "List of saved suppliers"
+        },
+        "history": {
+          "type": "array",
+          "description": "Document history"
+        },
+        "lastUsedNumbers": {
+          "type": "object",
+          "description": "Last used document numbers"
+        },
+        "priceHistory": {
+          "type": "array",
+          "description": "Price history for products"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last sync timestamp"
+        }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User-specific data"
+    }
+  }
+}
