@@ -3,7 +3,18 @@ import { AIProductSuggestion, AIDocumentAnalysis, DocumentHistoryItem, PriceHist
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+let aiInstance: GoogleGenAI | null = null;
+
+function getAI() {
+  if (!aiInstance) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not defined. Please set it in your environment variables.");
+    }
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+}
 
 export async function analyzeDocument(
   file: File, 
@@ -13,6 +24,7 @@ export async function analyzeDocument(
   businessName?: string
 ): Promise<AIDocumentAnalysis> {
   try {
+    const ai = getAI();
     const mimeType = file.type;
     let content: any;
     
@@ -79,10 +91,10 @@ export async function analyzeDocument(
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: [{ parts }],
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -143,6 +155,7 @@ export async function analyzeProductImage(
   businessName?: string
 ): Promise<AIDocumentAnalysis> {
   try {
+    const ai = getAI();
     const contextPrompt = industry ? `The business is in the ${industry} industry. ` : "";
     const historyContext = history && history.length > 0 
       ? `Recent products sold: ${history.slice(-10).map(h => h.fullData?.items.map(i => i.description).join(", ")).join(", ")}. `
@@ -183,10 +196,10 @@ export async function analyzeProductImage(
     parts.push({ text: prompt });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: [{ parts }],
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -236,6 +249,7 @@ export async function processVoiceInput(
   letterhead?: string
 ): Promise<Partial<AIProductSuggestion> | null> {
   try {
+    const ai = getAI();
     const contextPrompt = industry ? `The business is in the ${industry} industry. ` : "";
     const parts: any[] = [];
     let prompt = `${contextPrompt}Extract product/service details from this voice transcript: "${transcript}". 
@@ -255,10 +269,10 @@ export async function processVoiceInput(
     parts.push({ text: prompt });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: [{ parts }],
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -280,6 +294,7 @@ export async function processVoiceInput(
 
 export async function generateInvoiceNotes(businessName: string, items: any[], letterhead?: string): Promise<string> {
   try {
+    const ai = getAI();
     const itemDescriptions = items.map(i => i.description).filter(Boolean).join(", ");
     const parts: any[] = [];
     let prompt = `Generate a unique, professional 2-line invoice note for ${businessName}. 
@@ -299,7 +314,7 @@ export async function generateInvoiceNotes(businessName: string, items: any[], l
     parts.push({ text: prompt });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: [{ parts }],
     });
     return response.text.trim();
@@ -316,6 +331,7 @@ export async function getDynamicSuggestions(
   letterhead?: string
 ): Promise<string[]> {
   try {
+    const ai = getAI();
     const contextPrompt = industry ? `The business is in the ${industry} industry. ` : "";
     const historyContext = history && history.length > 0 
       ? `Recent products sold: ${history.slice(-10).map(h => h.fullData?.items.map(i => i.description).join(", ")).join(", ")}. `
@@ -339,10 +355,10 @@ export async function getDynamicSuggestions(
     parts.push({ text: prompt });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: [{ parts }],
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -361,6 +377,7 @@ export async function analyzeCustomerPatterns(
   history: DocumentHistoryItem[]
 ): Promise<{ notes: string; terms: string } | null> {
   try {
+    const ai = getAI();
     const customerHistory = history.filter(h => h.customerName === customerName);
     if (customerHistory.length === 0) return null;
 
@@ -371,7 +388,7 @@ export async function analyzeCustomerPatterns(
     }));
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: [{
         parts: [{
           text: `Analyze the notes and terms used for customer "${customerName}" in the following history: ${JSON.stringify(historyData)}. 
@@ -381,7 +398,7 @@ export async function analyzeCustomerPatterns(
         }]
       }],
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,

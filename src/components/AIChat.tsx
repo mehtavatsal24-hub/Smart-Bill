@@ -98,10 +98,10 @@ export const AIChat = ({ history, priceHistory, customers, suppliers, industry, 
       contents.push({ role: "user", parts: currentMessageParts });
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+        model: "gemini-3-flash-preview",
         contents: contents,
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           systemInstruction: systemInstruction,
           temperature: 0.2,
         }

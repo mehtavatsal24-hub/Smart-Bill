@@ -150,6 +150,8 @@ export default function App() {
     { id: "1", description: "", hsn: "", quantity: 1, unit: "NOS", rate: 0, taxRate: 18 }
   ]);
 
+  const isApiKeyMissing = !process.env.GEMINI_API_KEY;
+
   const [docType, setDocType] = useState<DocumentType>(DocumentType.TAX_INVOICE);
   const [isExport, setIsExport] = useState(false);
   const [currency, setCurrency] = useState("USD");
@@ -1408,6 +1410,24 @@ export default function App() {
     <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900 pb-20 selection:bg-brand-100 selection:text-brand-900">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-zinc-100 px-4 sm:px-8 py-4">
+        {isApiKeyMissing && (
+          <div className="mb-4 -mx-4 sm:-mx-8 -mt-4 bg-amber-50 border-b border-amber-200 px-4 py-2">
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-amber-800 text-[10px] sm:text-xs font-bold uppercase tracking-wider">
+                <AlertCircle className="h-3 w-3" />
+                <span>AI Features Disabled: GEMINI_API_KEY is missing</span>
+              </div>
+              <a 
+                href="https://ai.google.dev/pricing" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-amber-900 text-[10px] font-black underline hover:no-underline"
+              >
+                Get Key
+              </a>
+            </div>
+          </div>
+        )}
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
