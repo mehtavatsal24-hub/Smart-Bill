@@ -151,7 +151,7 @@ export default function App() {
   ]);
 
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-  const isApiKeyMissing = !apiKey || apiKey === "undefined";
+  const isApiKeyMissing = !apiKey || apiKey === "undefined" || apiKey === "";
 
   const [docType, setDocType] = useState<DocumentType>(DocumentType.TAX_INVOICE);
   const [isExport, setIsExport] = useState(false);

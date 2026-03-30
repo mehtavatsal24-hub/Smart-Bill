@@ -8,7 +8,7 @@ let aiInstance: GoogleGenAI | null = null;
 function getAI() {
   if (!aiInstance) {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === "undefined") {
+    if (!apiKey || apiKey === "undefined" || apiKey === "") {
       throw new Error("GEMINI_API_KEY is not defined. Please set it in your environment variables.");
     }
     aiInstance = new GoogleGenAI({ apiKey });
@@ -66,21 +66,26 @@ export async function analyzeDocument(
 
     if (mimeType.startsWith("image/") || mimeType === "application/pdf") {
       const base64 = await fileToBase64(file);
+      parts.push({ text: prompt });
       parts.push({
         inlineData: {
           mimeType: mimeType === "application/pdf" ? "application/pdf" : "image/jpeg",
           data: base64.split(",")[1] || base64,
         },
       });
-      parts.push({ text: prompt });
     } else if (mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || mimeType === "application/vnd.ms-excel") {
       // Excel
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer);
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-      const json = XLSX.utils.sheet_to_json(worksheet);
-      parts.push({ text: `Excel Content: ${JSON.stringify(json)}\n\n${prompt}` });
+      let excelContent = "";
+      
+      workbook.SheetNames.forEach(sheetName => {
+        const worksheet = workbook.Sheets[sheetName];
+        const csv = XLSX.utils.sheet_to_csv(worksheet);
+        excelContent += `\n--- Sheet: ${sheetName} ---\n${csv}\n`;
+      });
+      
+      parts.push({ text: `Excel Content (Multiple Sheets):\n${excelContent}\n\n${prompt}` });
     } else if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
       // Word
       const arrayBuffer = await file.arrayBuffer();
@@ -131,7 +136,25 @@ export async function analyzeDocument(
       },
     });
 
-    return JSON.parse(response.text) as AIDocumentAnalysis;
+    if (!response.text) {
+      throw new Error("Empty response from AI");
+    }
+
+    const analysis = JSON.parse(response.text) as AIDocumentAnalysis;
+    
+    // Final cleanup of product names to remove AI-added suffixes
+    if (analysis.products) {
+      analysis.products = analysis.products.map(p => ({
+        ...p,
+        name: (p.name || "")
+          .replace(/\s*\(\d+\)$/, '')
+          .replace(/\s*\(Duplicate Item\)$/i, '')
+          .replace(/\s*\(repeat\)$/i, '')
+          .trim()
+      }));
+    }
+
+    return analysis;
   } catch (error) {
     console.error("Error analyzing document:", error);
     return { products: [] };
@@ -236,7 +259,25 @@ export async function analyzeProductImage(
       },
     });
 
-    return JSON.parse(response.text) as AIDocumentAnalysis;
+    if (!response.text) {
+      throw new Error("Empty response from AI");
+    }
+
+    const analysis = JSON.parse(response.text) as AIDocumentAnalysis;
+    
+    // Final cleanup of product names to remove AI-added suffixes
+    if (analysis.products) {
+      analysis.products = analysis.products.map(p => ({
+        ...p,
+        name: (p.name || "")
+          .replace(/\s*\(\d+\)$/, '')
+          .replace(/\s*\(Duplicate Item\)$/i, '')
+          .replace(/\s*\(repeat\)$/i, '')
+          .trim()
+      }));
+    }
+
+    return analysis;
   } catch (error) {
     console.error("Error analyzing image:", error);
     return { products: [] };

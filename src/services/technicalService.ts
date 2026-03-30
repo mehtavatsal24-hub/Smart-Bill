@@ -17,7 +17,7 @@ export async function expandTechnicalSpec(input: string, industry?: string, lett
 
   try {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === "undefined") {
+    if (!apiKey || apiKey === "undefined" || apiKey === "") {
       console.error("GEMINI_API_KEY is not defined.");
       return input;
     }

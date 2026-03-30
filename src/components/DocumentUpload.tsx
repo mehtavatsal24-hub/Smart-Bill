@@ -28,9 +28,15 @@ export const DocumentUpload = ({ onAnalysisComplete, industry, history, letterhe
       const analysis = await analyzeDocument(file, industry, history, letterhead, businessName);
       if (analysis && (analysis.products.length > 0 || analysis.customer)) {
         onAnalysisComplete(analysis, mergeSimilar);
+      } else {
+        // No products found, but analysis might have completed
+        console.log("No products or customer found in document");
+        // We could show a small toast here if we had a toast system, 
+        // but for now we'll just log it and the user will see the loading stop.
       }
     } catch (error) {
       console.error("Upload error:", error);
+      // Show error in console, maybe add a simple alert for critical failures
     } finally {
       setIsProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
