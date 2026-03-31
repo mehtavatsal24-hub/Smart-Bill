@@ -37,8 +37,17 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
     }
   };
 
-  // Initial letterhead
-  addLetterhead();
+  // Override addPage to automatically add letterhead to new pages
+  // This ensures it's drawn first and doesn't cover content
+  const originalAddPage = doc.addPage.bind(doc);
+  (doc as any).addPage = function(...args: any[]) {
+    originalAddPage(...args);
+    if (hasLetterhead) addLetterhead();
+    return this;
+  };
+
+  // Initial letterhead for page 1
+  if (hasLetterhead) addLetterhead();
 
   const sections: Record<PDFSection, (y: number) => number> = {
     header: (y) => {
@@ -91,7 +100,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         theme: 'plain',
         styles: { fontSize: 9, cellPadding: { top: 1.2, bottom: 1.2, left: 0, right: 0 }, textColor: [0, 0, 0], font: "helvetica" },
         columnStyles: { 0: { cellWidth: 20, fontStyle: 'bold' }, 1: { cellWidth: 75 } },
-        margin: { left: 15 },
+        margin: { left: 15, top: headerHeight },
         didDrawCell: (data) => {
           if (data.section === 'body') {
             doc.setDrawColor(220, 220, 220);
@@ -116,7 +125,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         theme: 'plain',
         styles: { fontSize: 9, cellPadding: { top: 1.2, bottom: 1.2, left: 0, right: 0 }, textColor: [0, 0, 0], font: "helvetica" },
         columnStyles: { 0: { cellWidth: 35, fontStyle: 'bold' }, 1: { cellWidth: 'auto' } },
-        margin: { left: 115 },
+        margin: { left: 115, top: headerHeight },
         didDrawCell: (data) => {
           if (data.section === 'body') {
             doc.setDrawColor(220, 220, 220);
@@ -169,7 +178,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         styles: { fontSize: 9, cellPadding: 2.5, font: "helvetica" },
         margin: { top: headerHeight - 5, bottom: SAFE_BOTTOM },
         didDrawPage: (d) => {
-          if (hasLetterhead && d.pageNumber > 1) addLetterhead();
           if (d.pageNumber > 1) {
             doc.setFontSize(8);
             doc.setFont("helvetica", "italic");
@@ -203,16 +211,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       const isValidCustState = custStateCode && /^\d{2}$/.test(custStateCode);
       const isInterState = !!(isValidBizState && isValidCustState && bizStateCode !== custStateCode) || isExport;
 
-      if (y + 40 > pageHeight - SAFE_BOTTOM) {
-        doc.addPage();
-        if (hasLetterhead) addLetterhead();
-        y = headerHeight;
-      }
-
-      const totalsX = pageWidth - 85;
-      doc.setDrawColor(200, 200, 200);
-      doc.setFillColor(252, 252, 252);
-      
       const hasDiscount = discount > 0;
       let boxHeight = 12;
       if (!isQuotation) {
@@ -221,6 +219,18 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       } else if (hasDiscount) boxHeight += 8;
       if (hasDiscount) boxHeight += 8;
 
+      // Check if we need a page break with the actual box height
+      // If y is already beyond the safe area (which can happen if the table ended right at the margin),
+      // or if the box won't fit, we move to a new page.
+      if (y + boxHeight > pageHeight - SAFE_BOTTOM || y < headerHeight) {
+        doc.addPage();
+        y = headerHeight;
+      }
+
+      const totalsX = pageWidth - 85;
+      doc.setDrawColor(200, 200, 200);
+      doc.setFillColor(252, 252, 252);
+      
       doc.rect(totalsX, y - 5, 70, boxHeight, "F");
       doc.rect(totalsX, y - 5, 70, boxHeight, "S");
       
@@ -276,9 +286,9 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
     bank_details: (y) => {
       if (!business.bankName) return y;
-      if (y + 22 > pageHeight - SAFE_BOTTOM) {
+      const bankBoxHeight = 20;
+      if (y + bankBoxHeight + 5 > pageHeight - SAFE_BOTTOM) {
         doc.addPage();
-        if (hasLetterhead) addLetterhead();
         y = headerHeight;
       }
       doc.setFont("helvetica", "bold");
@@ -295,6 +305,13 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       const { notes, terms } = data;
       
       if (!notes && !terms) return y;
+
+      // Check if we have enough space to start the terms section
+      // If not, move to a new page
+      if (y + 20 > pageHeight - SAFE_BOTTOM) {
+        doc.addPage();
+        y = headerHeight;
+      }
       
       const body = [];
       if (notes && notes.trim()) {
@@ -319,17 +336,16 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             data.cell.styles.fontStyle = 'bold';
           }
         },
-        margin: { left: 15, right: 15, bottom: SAFE_BOTTOM },
-        pageBreak: 'avoid'
+        margin: { left: 15, right: 15, bottom: SAFE_BOTTOM, top: headerHeight },
+        pageBreak: 'auto'
       });
       return (doc as any).lastAutoTable.finalY + 8;
     },
 
     signature: (y) => {
-      const sigHeight = business.signature ? 22 : 15;
-      if (y + sigHeight + 10 > pageHeight - SAFE_BOTTOM) {
+      const sigHeight = business.signature ? 25 : 15;
+      if (y + sigHeight + 5 > pageHeight - SAFE_BOTTOM) {
         doc.addPage();
-        if (hasLetterhead) addLetterhead();
         y = headerHeight + 5;
       }
       doc.setFontSize(10);
