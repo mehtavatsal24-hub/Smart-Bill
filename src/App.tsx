@@ -26,7 +26,8 @@ import {
   Scale,
   Loader2,
   LogIn,
-  Eye
+  Eye,
+  X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import JSZip from "jszip";
@@ -175,6 +176,7 @@ export default function App() {
     },
   });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isAnalyzingPatterns, setIsAnalyzingPatterns] = useState(false);
   const [isCloudLoading, setIsCloudLoading] = useState(false);
   const [suggestedNotes, setSuggestedNotes] = useState<{ notes: string; terms: string } | null>(null);
@@ -981,6 +983,26 @@ export default function App() {
       });
     }
   }, []);
+
+  const importFromDocument = (doc: DocumentHistoryItem) => {
+    if (doc.fullData) {
+      setItems(doc.fullData.items.map(item => ({
+        ...item,
+        id: Math.random().toString(36).substr(2, 9),
+        qtyPacked: item.quantity,
+        remarks: "Complete",
+        heatNo: ""
+      })));
+      setCustomer(doc.fullData.customer);
+      setPoNumber(doc.fullData.poNumber || doc.fullData.id);
+      setIsImportModalOpen(false);
+      showModal({
+        title: "Import Successful",
+        message: `Imported ${doc.fullData.items.length} items from ${doc.type} ${doc.id}.`,
+        type: "success"
+      });
+    }
+  };
 
   const handleVoiceSuggestion = useCallback((suggestion: any) => {
     handleAIAnalysis({ products: [suggestion] });
@@ -2207,10 +2229,18 @@ export default function App() {
                     ))}
                   </div>
                   <div className="p-4 bg-zinc-50 border-t border-zinc-100 flex justify-between items-center">
-                    <Button variant="outline" size="sm" onClick={addItem} disabled={false}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Item
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={addItem} disabled={false}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Item
+                      </Button>
+                      {docType === DocumentType.PACKING_LIST && (
+                        <Button variant="ghost" size="sm" onClick={() => setIsImportModalOpen(true)} className="text-brand-600 hover:bg-brand-50">
+                          <History className="h-4 w-4 mr-2" />
+                          Import from Invoice/Quotation
+                        </Button>
+                      )}
+                    </div>
                     <div className="text-right">
                       <p className="text-xs text-zinc-500 uppercase font-semibold">
                         {docType === DocumentType.QUOTATION ? "Total" : "Subtotal"}
@@ -2476,6 +2506,59 @@ export default function App() {
         confirmText={modalConfig.confirmText}
         cancelText={modalConfig.cancelText}
       />
+
+      {/* Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden"
+          >
+            <div className="p-6 border-b border-zinc-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold">Import Products</h3>
+                <p className="text-xs text-zinc-500">Select a previous document to pull products from</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setIsImportModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {history.length === 0 ? (
+                <div className="text-center py-12">
+                  <History className="h-12 w-12 text-zinc-200 mx-auto mb-4" />
+                  <p className="text-zinc-500 font-medium">No document history found</p>
+                </div>
+              ) : (
+                history
+                  .filter(h => h.type !== DocumentType.PACKING_LIST)
+                  .sort((a, b) => b.timestamp - a.timestamp)
+                  .map((doc) => (
+                    <button
+                      key={doc.id + doc.timestamp}
+                      onClick={() => importFromDocument(doc)}
+                      className="w-full flex items-center justify-between p-4 rounded-xl border border-zinc-100 hover:border-brand-200 hover:bg-brand-50/30 transition-all text-left group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-lg bg-zinc-100 flex items-center justify-center group-hover:bg-brand-100 transition-colors">
+                          <FileText className="h-5 w-5 text-zinc-400 group-hover:text-brand-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-zinc-900">{doc.customerName}</p>
+                          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                            {doc.type} • {doc.id} • {doc.date}
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-zinc-300 group-hover:text-brand-600 group-hover:translate-x-1 transition-all" />
+                    </button>
+                  ))
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

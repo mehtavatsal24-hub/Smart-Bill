@@ -86,6 +86,27 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
     party_details: (y) => {
       const { customer, type, id, date, transport, poNumber } = data;
+      const isPackingList = type === DocumentType.PACKING_LIST;
+
+      if (isPackingList) {
+        const packingRows = [
+          ["CLIENT", customer.name],
+          ["MANUFACTURER", business.name],
+          ["P O NO & DATE", `${poNumber || "-"} DT-${format(new Date(date), "dd-MM-yyyy")}`]
+        ];
+
+        autoTable(doc, {
+          startY: y,
+          body: packingRows,
+          theme: 'grid',
+          styles: { fontSize: 9, cellPadding: 3, textColor: [0, 0, 0], font: "helvetica" },
+          columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold', fillColor: [240, 240, 240] }, 1: { cellWidth: 'auto' } },
+          margin: { left: 15, right: 15, top: headerHeight },
+        });
+
+        return (doc as any).lastAutoTable.finalY + 10;
+      }
+
       const customerRows = [
         ["Customer:", customer.name],
         ["Address:", customer.address],
@@ -139,7 +160,58 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
     },
 
     items_table: (y) => {
-      const { items, isExport, currency = "INR" } = data;
+      const { items, isExport, currency = "INR", type } = data;
+      const isPackingList = type === DocumentType.PACKING_LIST;
+
+      if (isPackingList) {
+        const tableData = items.map((item, index) => [
+          index + 1,
+          item.description,
+          item.heatNo || "-",
+          item.quantity,
+          item.qtyPacked || item.quantity,
+          item.remarks || "Complete",
+          item.boxNo || `Pkg ${index + 1}`
+        ]);
+
+        autoTable(doc, {
+          startY: y,
+          head: [["PO Sr.No.", "ITEMS", "HEAT NO", "PO. QTY", "QTY PKD NOS", "Remarks", "Packaging"]],
+          body: tableData,
+          theme: 'grid',
+          headStyles: { 
+            fillColor: [200, 200, 200],
+            textColor: [0, 0, 0],
+            fontSize: 8,
+            fontStyle: 'bold',
+            halign: 'center'
+          },
+          columnStyles: {
+            0: { halign: 'center', cellWidth: 15 },
+            1: { cellWidth: 'auto' },
+            2: { halign: 'center', cellWidth: 25 },
+            3: { halign: 'center', cellWidth: 20 },
+            4: { halign: 'center', cellWidth: 20 },
+            5: { halign: 'center', cellWidth: 30 },
+            6: { halign: 'center', cellWidth: 25 },
+          },
+          styles: { fontSize: 8, cellPadding: 2.5, font: "helvetica", textColor: [0, 0, 0] },
+          margin: { left: 15, right: 15, top: headerHeight - 5, bottom: SAFE_BOTTOM },
+          didDrawPage: (d) => {
+            if (d.pageNumber > 1) {
+              doc.setFontSize(8);
+              doc.setFont("helvetica", "italic");
+              doc.setTextColor(150, 150, 150);
+              doc.text(`Continued from page ${d.pageNumber - 1}...`, 15, headerHeight - 10);
+              doc.setTextColor(0, 0, 0);
+            }
+          },
+          rowPageBreak: 'auto'
+        });
+
+        return (doc as any).lastAutoTable.finalY + 8;
+      }
+
       const currencySymbol = currency === "INR" ? "Rs." : (CURRENCY_SYMBOLS[currency] || currency);
       const tableData = items.map((item, index) => [
         index + 1,
@@ -194,6 +266,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
     totals: (y) => {
       const { items, discount = 0, discountRate = 0, isExport, currency = "INR", type, customer } = data;
+      if (type === DocumentType.PACKING_LIST) return y;
+      
       const subtotal = Math.round(items.reduce((acc, item) => acc + (item.isRegret ? 0 : item.quantity * item.rate), 0) * 100) / 100;
       const isQuotation = type === DocumentType.QUOTATION;
       const totalTax = isQuotation ? 0 : Math.round(items.reduce((acc, item) => acc + (item.isRegret ? 0 : (item.quantity * item.rate * item.taxRate) / 100), 0) * 100) / 100;
@@ -302,9 +376,9 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
     },
 
     terms: (y) => {
-      const { notes, terms } = data;
+      const { notes, terms, type } = data;
       
-      if (!notes && !terms) return y;
+      if ((!notes && !terms) || type === DocumentType.PACKING_LIST) return y;
 
       // Check if we have enough space to start the terms section
       // If not, move to a new page

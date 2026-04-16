@@ -4,6 +4,7 @@ export enum DocumentType {
   PROFORMA_INVOICE = "Proforma Invoice",
   QUOTATION = "Quotation",
   PURCHASE_ORDER = "Purchase Order",
+  PACKING_LIST = "Packing List",
 }
 
 export interface BusinessDetails {
@@ -79,6 +80,10 @@ export interface LineItem {
   rate: number;
   taxRate: number; // percentage
   isRegret?: boolean;
+  heatNo?: string;
+  qtyPacked?: number;
+  remarks?: string;
+  boxNo?: string;
 }
 
 export interface InvoiceData {
