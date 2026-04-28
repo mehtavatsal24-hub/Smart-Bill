@@ -79,23 +79,20 @@ export async function analyzeDocument(
       : "";
     const userContext = businessName ? `The user's company is "${businessName}". ` : "";
 
-    let prompt = `${contextPrompt}${historyContext}${userContext}Analyze this document (Inquiry, Purchase Order, Invoice, or any business document from any industry). 
+    let prompt = `${contextPrompt}${historyContext}${userContext}Analyze this document (Inquiry, Purchase Order, Invoice, or any business document). 
       1. Extract ALL product/service line items found. 
-         - Be extremely precise with product names, specifications, and sizes, regardless of the industry (e.g., hardware, electronics, apparel, food, services, etc.).
-         - For each product, provide: Name, Category, Likely HSN/SAC Code (strictly 4 digits), Standard GST Rate (0, 5, 12, 18, or 28), Quantity (if visible, default 1), Rate (if visible, default 0), Unit (e.g., NOS, PCS, KG, MTR, BOX, SET, LTR).
-         - If the same product appears in multiple lines, extract them as separate entries (the app will handle merging if requested).
-         - Ensure you capture the full description including dimensions, grades, or any technical specifications.
+         - Map table columns correctly: Look for "Description", "Specifications", "Item", "Quantity", "Qty", "Rate", "Price", "Unit", "HSN", "Tax", "GST".
+         - Be extremely precise with product names. If a description is spread across multiple lines or rows (common in hardware/technical docs), JOIN them into a single coherent description.
+         - For each product, provide: Name (full technical description), Category, Likely HSN/SAC Code (strictly 4 digits), Standard GST Rate (0, 5, 12, 18, or 28), Quantity (default 1), Rate (default 0), Unit (e.g., NOS, PCS, KG, MTR, BOX, SET).
+         - Capture ALL items, do not skip any.
       2. Extract the RECIPIENT/CUSTOMER details. 
-         - Look for labels like "To:", "Bill To:", "Customer:", "Consignee:", "Ship To:", or "Client:". 
-         - This is the party the document is addressed to, NOT the company in the main header/logo.
-         - If the document is a Quotation or Invoice, the customer is the one being billed/quoted.
-         - If the document is a Purchase Order, the customer is the one issuing the order (usually the sender).
-         - IMPORTANT: Do NOT extract the user's own company ("${businessName || "the sender"}") as the customer if another party is mentioned as the recipient.
+         - This is the party the document is addressed to (e.g., "Bill To", "Ship To", "Consignee").
+         - DO NOT extract the user's company "${businessName || "the sender"}" as the customer.
          - Extract: Name, GSTIN, Address, Phone, Email.
       
       Return as a JSON object with 'products' (array) and 'customer' (object).
       
-      \n\nIMPORTANT NUMBER HANDLING:\n- Handle large numbers correctly. \n- Be careful with thousands separators vs decimal points. Some documents use '.' as thousands separator (e.g., 1.500,00 means 1500), while others use ',' (e.g., 1,500.00 means 1500). \n- Always return the rate as a clean numeric value (e.g., 1500.00).\n- Do NOT append suffixes like '(Duplicate Item)', '(repeat)', '(1)', '(2)', etc. to the product names.`;
+      \n\nNUMBER & DATA INTEGRITY:\n- Handle non-English decimal formats (e.g., 1.500,00 vs 1,500.00). \n- If a "Total" or "Amount" column exists, use it to cross-verify the Rate * Quantity calculations.\n- Ignore generic footer text, bank details, or terms and conditions when extracting products.`;
 
     const parts: any[] = [];
     
@@ -144,7 +141,7 @@ export async function analyzeDocument(
       model: "gemini-3-flash-preview",
       contents: [{ parts }],
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -231,19 +228,20 @@ export async function analyzeProductImage(
     const userContext = businessName ? `The user's company is "${businessName}". ` : "";
 
     const parts: any[] = [];
-    let prompt = `${contextPrompt}${historyContext}${userContext}Analyze this image. It could be a business document (Inquiry, PO, Invoice), a product on a shelf, a single item, or a handwritten list from any industry (e.g., hardware, electronics, apparel, food, services, etc.). 
+    let prompt = `${contextPrompt}${historyContext}${userContext}Analyze this image (Inquiry, PO, Invoice, product photo, or handwritten list). 
       1. Extract ALL product/service line items found. 
-         - Be extremely precise with product names, specifications, and sizes.
-         - For each product, provide: Name, Category, Likely HSN/SAC Code (strictly 4 digits), Standard GST Rate (0, 5, 12, 18, or 28), Quantity (if visible, default 1), Rate (if visible, default 0), Unit (e.g., NOS, PCS, KG, MTR, BOX, SET, LTR).
-         - If the same product appears in multiple lines, extract them as separate entries (the app will handle merging if requested).
-         - Ensure you capture the full description including dimensions, grades, or any technical specifications.
+         - Map columns: Look for "Description", "Specifications", "Item", "Quantity", "Rate", "Price", "Unit", "HSN", "GST".
+         - Be extremely precise. If a description spans multiple lines, JOIN them.
+         - For each product, provide: Name (full description), Category, Likely HSN/SAC Code (4 digits), Standard GST Rate (0, 5, 12, 18, or 28), Quantity (default 1), Rate (default 0), Unit (e.g., NOS, PCS, KG, MTR).
+         - Capture ALL items without skipping.
       2. Extract the RECIPIENT/CUSTOMER details if visible. 
-         - Look for labels like "To:", "Bill To:", "Customer:", "Consignee:", or "Client:". 
-         - This is the party the document is addressed to, NOT the company in the main header/logo.
-         - IMPORTANT: Do NOT extract the user's own company ("${businessName || "the sender"}") as the customer if another party is mentioned as the recipient.
+         - Look for "Bill To", "Ship To", "Consignee", or recipient labels. 
+         - DO NOT extract the user's company "${businessName || "the sender"}" as the customer.
          - Extract: Name, GSTIN, Address, Phone, Email.
       
-      Return as a JSON object with 'products' (array) and 'customer' (object).`;
+      Return as a JSON object with 'products' (array) and 'customer' (object).
+      
+      \n\nNUMBER INTEGRITY:\n- Correctly interpret decimal vs thousands separators. \n- Rate should be numeric (e.g., 1500.00).`;
 
     if (letterhead) {
       parts.push({
@@ -267,7 +265,7 @@ export async function analyzeProductImage(
       model: "gemini-3-flash-preview",
       contents: [{ parts }],
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -358,7 +356,7 @@ export async function processVoiceInput(
       model: "gemini-3-flash-preview",
       contents: [{ parts }],
       config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,

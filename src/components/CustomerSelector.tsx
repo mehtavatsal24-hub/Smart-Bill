@@ -6,7 +6,7 @@ import { Button } from "./Button";
 
 interface CustomerSelectorProps {
   customers: SavedCustomer[];
-  onSelect: (customer: CustomerDetails) => void;
+  onSelect: (customer: SavedCustomer) => void;
   currentValue: string;
   onChange: (value: string) => void;
   label?: string;

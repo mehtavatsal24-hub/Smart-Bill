@@ -19,6 +19,7 @@ import { Card, CardHeader, CardContent } from "./Card";
 import { Button } from "./Button";
 import { DocumentHistoryItem, PriceHistoryItem, SavedCustomer, SavedSupplier, DocumentType } from "../types";
 import { AIChat } from "./AIChat";
+import { CURRENCY_SYMBOLS } from "../constants";
 
 interface DashboardProps {
   history: DocumentHistoryItem[];
@@ -56,11 +57,11 @@ export const Dashboard = ({
   
   const totalSales = useMemo(() => history
     .filter(h => h.type === DocumentType.TAX_INVOICE)
-    .reduce((acc, curr) => acc + curr.total, 0), [history]);
+    .reduce((acc, curr) => acc + (curr.inrTotal || curr.total), 0), [history]);
     
   const totalPurchases = useMemo(() => history
     .filter(h => h.type === DocumentType.PURCHASE_ORDER)
-    .reduce((acc, curr) => acc + curr.total, 0), [history]);
+    .reduce((acc, curr) => acc + (curr.inrTotal || curr.total), 0), [history]);
 
   const recentDocs = useMemo(() => [...history]
     .sort((a, b) => b.timestamp - a.timestamp)
@@ -183,7 +184,10 @@ export const Dashboard = ({
                           </td>
                           <td className="px-8 py-5 text-right">
                             <div className="flex items-center justify-end gap-3">
-                              <p className="text-sm font-black text-zinc-900">₹{doc.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                              <p className="text-sm font-black text-zinc-900">
+                                {CURRENCY_SYMBOLS[doc.currency || 'INR'] || doc.currency || '₹'}
+                                {doc.total.toLocaleString(doc.currency === 'INR' || !doc.currency ? 'en-IN' : 'en-US', { minimumFractionDigits: 2 })}
+                              </p>
                               <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
                                 <Button 
                                   variant="ghost" 
@@ -264,7 +268,10 @@ export const Dashboard = ({
                             <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">{doc.type}</p>
                           </div>
                         </div>
-                        <p className="text-sm font-black text-zinc-900">₹{doc.total.toLocaleString('en-IN')}</p>
+                        <p className="text-sm font-black text-zinc-900">
+                          {CURRENCY_SYMBOLS[doc.currency || 'INR'] || doc.currency || '₹'}
+                          {doc.total.toLocaleString(doc.currency === 'INR' || !doc.currency ? 'en-IN' : 'en-US')}
+                        </p>
                       </div>
                       
                       <div className="flex items-center justify-between">

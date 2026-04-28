@@ -14,6 +14,7 @@ import {
 import { Card, CardHeader, CardContent } from "./Card";
 import { Button } from "./Button";
 import { DocumentHistoryItem, DocumentType } from "../types";
+import { CURRENCY_SYMBOLS } from "../constants";
 
 interface HistoryListProps {
   history: DocumentHistoryItem[];
@@ -84,6 +85,7 @@ export const HistoryList = ({ history, onOpenDocument, onDownloadPDF, onDeleteDo
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/50">
+                  <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider w-12">#</th>
                   <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Document</th>
                   <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Customer</th>
                   <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Date</th>
@@ -100,6 +102,9 @@ export const HistoryList = ({ history, onOpenDocument, onDownloadPDF, onDeleteDo
                       onClick={() => onDownloadPDF(doc)}
                       title="Click to view PDF"
                     >
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-bold text-zinc-400">{idx + 1}</span>
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded flex items-center justify-center ${doc.type === "Purchase Order" ? "bg-orange-50 text-orange-600" : "bg-emerald-50 text-emerald-600"}`}>
@@ -125,8 +130,8 @@ export const HistoryList = ({ history, onOpenDocument, onDownloadPDF, onDeleteDo
                       </td>
                       <td className="px-6 py-4 text-right">
                         <p className="text-sm font-bold text-zinc-900">
-                          {doc.currency && doc.currency !== "INR" ? doc.currency : "₹"}
-                          {doc.total.toLocaleString(doc.currency && doc.currency !== "INR" ? 'en-US' : 'en-IN', { minimumFractionDigits: 2 })}
+                          {CURRENCY_SYMBOLS[doc.currency || 'INR'] || doc.currency || '₹'}
+                          {doc.total.toLocaleString(doc.currency === 'INR' || !doc.currency ? 'en-IN' : 'en-US', { minimumFractionDigits: 2 })}
                         </p>
                       </td>
                       <td className="px-6 py-4 text-right">

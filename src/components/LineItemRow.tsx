@@ -10,6 +10,7 @@ import { validateHSN, validatePositiveNumber } from "../lib/validation";
 
 interface LineItemRowProps {
   item: LineItem;
+  index: number;
   onUpdate: (id: string, updates: Partial<LineItem>) => void;
   onRemove: (id: string) => void;
   priceHistory?: PriceHistoryItem[];
@@ -23,6 +24,7 @@ interface LineItemRowProps {
 
 export const LineItemRow = ({ 
   item, 
+  index,
   onUpdate, 
   onRemove, 
   priceHistory = [], 
@@ -91,8 +93,13 @@ export const LineItemRow = ({
     <div className={`grid grid-cols-12 gap-3 sm:gap-4 items-start py-4 sm:py-6 border-b border-zinc-100 last:border-0 group/row ${item.isRegret ? 'bg-red-50/30' : ''}`}>
       <div className={isPackingList ? "col-span-12 md:col-span-3" : "col-span-12 md:col-span-4"}>
         <div className="relative group">
+          <div className="flex items-center gap-2 mb-1.5 ml-1">
+            <span className="flex items-center justify-center w-5 h-5 rounded-md bg-zinc-100 text-[10px] font-black text-zinc-500 border border-zinc-200">
+              {index + 1}
+            </span>
+            <label className="block text-xs font-extrabold text-zinc-500 uppercase tracking-widest">Description</label>
+          </div>
           <ProductAutocomplete
-            label="Description"
             value={item.description}
             onChange={(val) => onUpdate(item.id, { description: val })}
             onSelect={(suggestion) => onUpdate(item.id, { 

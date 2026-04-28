@@ -54,10 +54,14 @@ export interface CustomerDetails {
 
 export interface SavedCustomer extends CustomerDetails {
   id: string;
+  isExport?: boolean;
+  currency?: string;
 }
 
 export interface SavedSupplier extends CustomerDetails {
   id: string;
+  isExport?: boolean;
+  currency?: string;
 }
 
 export interface DocumentHistoryItem {
@@ -67,6 +71,7 @@ export interface DocumentHistoryItem {
   date: string;
   customerName: string;
   total: number;
+  inrTotal?: number;
   currency?: string;
   fullData?: InvoiceData;
 }

@@ -74,7 +74,7 @@ const sanitizeKey = (key: string) => {
 };
 
 // Helper to compress images before saving to state/localStorage
-const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.7): Promise<string> => {
+const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.6, format = 'image/jpeg'): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.src = base64Str;
@@ -99,9 +99,68 @@ const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quali
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      resolve(canvas.toDataURL(format, quality));
     };
     img.onerror = () => resolve(base64Str); // Fallback to original if error
+  });
+};
+
+// Smart signature processor: Removes light backgrounds (paper) and converts to transparent PNG
+const processSignature = (base64Str: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const maxWidth = 500;
+      const maxHeight = 300;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth) {
+        height *= maxWidth / width;
+        width = maxWidth;
+      }
+      if (height > maxHeight) {
+        width *= maxHeight / height;
+        height = maxHeight;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(base64Str);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const data = imgData.data;
+      
+      // Algorithm to remove background:
+      // If the pixel is very bright (likely paper), make it transparent.
+      // We use a luma-based approach.
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        
+        // Calculate brightness
+        const brightness = (0.299 * r + 0.587 * g + 0.114 * b);
+        
+        // If brightness is high (white/grey paper), increase transparency
+        if (brightness > 200) {
+          // Linear transparency from 200 (opaque) to 255 (fully transparent)
+          const alpha = Math.max(0, 255 - (brightness - 200) * 5);
+          data[i + 3] = Math.min(data[i + 3], alpha);
+        }
+      }
+      
+      ctx.putImageData(imgData, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(base64Str);
   });
 };
 
@@ -294,66 +353,68 @@ export default function App() {
       localStorage.setItem(fullKey, JSON.stringify(value));
     } catch (e) {
       if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-        console.warn(`QuotaExceededError for ${key}, attempting cleanup...`);
+        console.warn(`QuotaExceededError for ${key}, attempting multi-tier recovery...`);
         
-        // 1. Try to strip images from the current value if it's business_details
-        let strippedValue = value;
-        if (key === "business_details") {
-          const { logo, letterhead, signature, ...rest } = value;
-          strippedValue = rest;
-        } else if (key === "document_history" && Array.isArray(value)) {
-          // Keep only the last 10 items with fullData
-          const len = value.length;
-          strippedValue = value.map((item, index) => {
-            if (index < len - 10) {
-              const { fullData, ...rest } = item;
-              return rest;
-            }
-            return item;
-          });
-        }
-
         try {
-          if (strippedValue !== value) {
-            localStorage.setItem(fullKey, JSON.stringify(strippedValue));
-            console.warn(`Saved stripped version of ${key} due to quota limits.`);
-            return;
-          }
-        } catch (innerError) {
-          console.error("Failed to save even stripped version, clearing old history...");
-        }
-
-        // 2. If it still fails, try to clear OLD history items from localStorage for THIS user
-        try {
-          const historyKey = getStorageKey("document_history", userId);
-          const historyData = localStorage.getItem(historyKey);
-          if (historyData) {
-            const historyArr = JSON.parse(historyData);
-            if (Array.isArray(historyArr) && historyArr.length > 5) {
-              // Keep only the last 5 items, and strip fullData from them too
-              const newHistory = historyArr.slice(-5).map(item => {
-                const { fullData, ...rest } = item;
-                return rest;
-              });
-              localStorage.setItem(historyKey, JSON.stringify(newHistory));
-              console.warn("Cleared old history to free up space.");
-              
-              // Try saving the original (or stripped) value again
-              localStorage.setItem(fullKey, JSON.stringify(strippedValue));
+          // Tier 1: Just remove letterhead (the biggest offender usually)
+          if (key === "business_details") {
+            const { letterhead, ...rest } = value;
+            if (letterhead) {
+              localStorage.setItem(fullKey, JSON.stringify(rest));
+              console.warn("Removed letterhead to stay within quota.");
               return;
             }
           }
-        } catch (historyError) {
-          console.error("Failed to clear history:", historyError);
-        }
 
-        showModal({
-          title: "Storage Full",
-          message: "Your browser's local storage is full. Some data might not be saved locally, but it will still be synced to the cloud if you're logged in.",
-          type: "warning"
-        });
+          // Tier 2: Remove all images
+          if (key === "business_details") {
+            const { logo, letterhead, signature, ...rest } = value;
+            localStorage.setItem(fullKey, JSON.stringify(rest));
+            console.warn("Removed all profile images to stay within quota.");
+            return;
+          }
+
+          // Tier 3: Truncate history
+          if (key === "document_history" && Array.isArray(value)) {
+            const truncated = value.slice(-10).map(item => {
+              const { fullData, ...rest } = item;
+              return rest;
+            });
+            localStorage.setItem(fullKey, JSON.stringify(truncated));
+            console.warn("Truncated and stripped document history to stay within quota.");
+            return;
+          }
+
+          // Tier 4: Emergency cleanup of other items for this user
+          const keys = Object.keys(localStorage);
+          const userPrefix = userId ? `${userId}_` : "guest_";
+          keys.forEach(k => {
+            if (k.startsWith(userPrefix) && k !== fullKey && !k.includes("business_details")) {
+              localStorage.removeItem(k);
+            }
+          });
+          
+          // Try original one last time
+          localStorage.setItem(fullKey, JSON.stringify(value));
+          console.warn("Recovered quota by clearing other user data items.");
+        } catch (innerError) {
+          console.error("Critical: Storage recovery failed completely.", innerError);
+          // Last resort: Minimal business details or notify user
+          if (key === "business_details") {
+            try {
+              const minimal = { name: value.name, gstin: value.gstin };
+              localStorage.setItem(fullKey, JSON.stringify(minimal));
+            } catch (f) {}
+          }
+          
+          showModal({
+            title: "Storage Quota Exceeded",
+            message: "Your browser storage is full. We've attempted to clear space, but we recommend checking your uploaded images or clearing your history.",
+            type: "warning"
+          });
+        }
       } else {
-        console.error(`Failed to save to localStorage: ${key}`, e);
+        console.error(`Local storage Error [${key}]:`, e);
       }
     }
   };
@@ -438,35 +499,35 @@ export default function App() {
             // Overwrite with cloud data if it exists
             if (cloudData.business) {
               setBusiness(cloudData.business);
-              localStorage.setItem(getStorageKey("business_details", user.uid), JSON.stringify(cloudData.business));
+              safeSave("business_details", cloudData.business, user.uid);
             }
             if (cloudData.savedCustomers) {
               setSavedCustomers(cloudData.savedCustomers);
-              localStorage.setItem(getStorageKey("saved_customers", user.uid), JSON.stringify(cloudData.savedCustomers));
+              safeSave("saved_customers", cloudData.savedCustomers, user.uid);
             }
             if (cloudData.savedSuppliers) {
               setSavedSuppliers(cloudData.savedSuppliers);
-              localStorage.setItem(getStorageKey("saved_suppliers", user.uid), JSON.stringify(cloudData.savedSuppliers));
+              safeSave("saved_suppliers", cloudData.savedSuppliers, user.uid);
             }
             if (cloudData.history) {
               setHistory(cloudData.history);
-              localStorage.setItem(getStorageKey("document_history", user.uid), JSON.stringify(cloudData.history));
+              safeSave("document_history", cloudData.history, user.uid);
             }
             if (cloudData.lastUsedNumbers) {
               setLastUsedNumbers(cloudData.lastUsedNumbers);
-              localStorage.setItem(getStorageKey("last_used_numbers", user.uid), JSON.stringify(cloudData.lastUsedNumbers));
+              safeSave("last_used_numbers", cloudData.lastUsedNumbers, user.uid);
             }
             if (cloudData.priceHistory) {
               setPriceHistory(cloudData.priceHistory);
-              localStorage.setItem(getStorageKey("price_history", user.uid), JSON.stringify(cloudData.priceHistory));
+              safeSave("price_history", cloudData.priceHistory, user.uid);
             }
             if (cloudData.pdf_layout_settings) {
               setLayoutSettings(cloudData.pdf_layout_settings);
-              localStorage.setItem(getStorageKey("pdf_layout_settings", user.uid), JSON.stringify(cloudData.pdf_layout_settings));
+              safeSave("pdf_layout_settings", cloudData.pdf_layout_settings, user.uid);
             }
             if (cloudData.last_used_notes_and_terms) {
               setLastUsedNotesAndTerms(cloudData.last_used_notes_and_terms);
-              localStorage.setItem(getStorageKey("last_used_notes_and_terms", user.uid), JSON.stringify(cloudData.last_used_notes_and_terms));
+              safeSave("last_used_notes_and_terms", cloudData.last_used_notes_and_terms, user.uid);
             }
           }
         } catch (error) {
@@ -1038,13 +1099,14 @@ export default function App() {
     }
 
     // Save customer/supplier if new or update if existing
+    const customerPreferences = { isExport, currency };
     if (docType === DocumentType.PURCHASE_ORDER) {
       const exists = savedSuppliers.find(c => c.name.toLowerCase() === customer.name.toLowerCase());
       let updatedSuppliers;
       if (!exists) {
-        updatedSuppliers = [...savedSuppliers, { ...customer, id: Math.random().toString(36).substr(2, 9) }];
+        updatedSuppliers = [...savedSuppliers, { ...customer, ...customerPreferences, id: Math.random().toString(36).substr(2, 9) }];
       } else {
-        updatedSuppliers = savedSuppliers.map(c => c.id === exists.id ? { ...customer, id: c.id } : c);
+        updatedSuppliers = savedSuppliers.map(c => c.id === exists.id ? { ...customer, ...customerPreferences, id: c.id } : c);
       }
       setSavedSuppliers(updatedSuppliers);
       safeSave("saved_suppliers", updatedSuppliers, user?.uid);
@@ -1052,9 +1114,9 @@ export default function App() {
       const exists = savedCustomers.find(c => c.name.toLowerCase() === customer.name.toLowerCase());
       let updatedCustomers;
       if (!exists) {
-        updatedCustomers = [...savedCustomers, { ...customer, id: Math.random().toString(36).substr(2, 9) }];
+        updatedCustomers = [...savedCustomers, { ...customer, ...customerPreferences, id: Math.random().toString(36).substr(2, 9) }];
       } else {
-        updatedCustomers = savedCustomers.map(c => c.id === exists.id ? { ...customer, id: c.id } : c);
+        updatedCustomers = savedCustomers.map(c => c.id === exists.id ? { ...customer, ...customerPreferences, id: c.id } : c);
       }
       setSavedCustomers(updatedCustomers);
       safeSave("saved_customers", updatedCustomers, user?.uid);
@@ -1097,6 +1159,7 @@ export default function App() {
         date,
         customerName: customer.name,
         total: totals.convertedTotal,
+        inrTotal: totals.inrTotal,
         currency: isExport ? currency : "INR",
         fullData: {
           ...data,
@@ -1223,6 +1286,9 @@ export default function App() {
     setTransport(data.transport || "");
     setPoNumber(data.poNumber || "");
     setDiscountRate(data.discountRate || 0);
+    setIsExport(data.isExport || false);
+    setCurrency(data.currency || "USD");
+    setExchangeRate(data.exchangeRate || 1);
     setLoadedTimestamp(doc.timestamp);
     setStep("invoice");
     window.scrollTo(0, 0);
@@ -1696,7 +1762,8 @@ export default function App() {
                               if (file) {
                                 const reader = new FileReader();
                                 reader.onloadend = async () => {
-                                  const compressed = await compressImage(reader.result as string, 400, 400, 0.7);
+                                  // Use PNG for logos to support transparency
+                                  const compressed = await compressImage(reader.result as string, 400, 400, 0.8, 'image/png');
                                   handleBusinessChange({ logo: compressed });
                                 };
                                 reader.readAsDataURL(file);
@@ -1741,7 +1808,8 @@ export default function App() {
                               if (file) {
                                 const reader = new FileReader();
                                 reader.onloadend = async () => {
-                                  const compressed = await compressImage(reader.result as string, 1200, 1600, 0.6);
+                                  // Increase compression for letterhead as it's the largest item usually
+                                  const compressed = await compressImage(reader.result as string, 1000, 1400, 0.4);
                                   handleBusinessChange({ letterhead: compressed });
                                 };
                                 reader.readAsDataURL(file);
@@ -1787,8 +1855,9 @@ export default function App() {
                               if (file) {
                                 const reader = new FileReader();
                                 reader.onloadend = async () => {
-                                  const compressed = await compressImage(reader.result as string, 400, 400, 0.7);
-                                  handleBusinessChange({ signature: compressed });
+                                  // Use smart processor for signatures
+                                  const processed = await processSignature(reader.result as string);
+                                  handleBusinessChange({ signature: processed });
                                 };
                                 reader.readAsDataURL(file);
                               }
@@ -2138,7 +2207,14 @@ export default function App() {
                     customers={docType === DocumentType.PURCHASE_ORDER ? savedSuppliers : savedCustomers}
                     currentValue={customer.name}
                     onChange={(val) => setCustomer({ ...customer, name: val })}
-                    onSelect={(selected) => setCustomer(selected)}
+                    onSelect={(selected) => {
+                      setCustomer(selected);
+                      // Always update isExport based on selection, default to false if not set
+                      setIsExport(!!selected.isExport);
+                      if (selected.currency) {
+                        setCurrency(selected.currency);
+                      }
+                    }}
                     label={docType === DocumentType.PURCHASE_ORDER ? "Supplier Name" : "Customer Name"}
                     placeholder={docType === DocumentType.PURCHASE_ORDER ? "Search or enter supplier name" : "Search or enter customer name"}
                   />
@@ -2212,10 +2288,11 @@ export default function App() {
                 />
                 <CardContent className="p-0">
                   <div className="px-6">
-                    {items.map((item) => (
+                    {items.map((item, index) => (
                       <LineItemRow 
                         key={item.id} 
                         item={item} 
+                        index={index}
                         onUpdate={updateItem} 
                         onRemove={removeItem} 
                         priceHistory={priceHistory}
@@ -2234,10 +2311,10 @@ export default function App() {
                         <Plus className="h-4 w-4 mr-2" />
                         Add Item
                       </Button>
-                      {docType === DocumentType.PACKING_LIST && (
+                      {(docType === DocumentType.PACKING_LIST || docType === DocumentType.TAX_INVOICE) && (
                         <Button variant="ghost" size="sm" onClick={() => setIsImportModalOpen(true)} className="text-brand-600 hover:bg-brand-50">
                           <History className="h-4 w-4 mr-2" />
-                          Import from Invoice/Quotation
+                          {docType === DocumentType.TAX_INVOICE ? "Import from Quotation" : "Import from Invoice/Quotation"}
                         </Button>
                       )}
                     </div>

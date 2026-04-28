@@ -274,7 +274,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       const grandTotal = Math.max(0, Math.round((subtotal + totalTax - discount) * 100) / 100);
       const currencySymbol = currency === "INR" ? "Rs." : (CURRENCY_SYMBOLS[currency] || currency);
 
-      const formatCurrency = (val: number) => {
+      const formatCurrencyLocal = (val: number) => {
         if (isExport) return `${currencySymbol} ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         return `Rs. ${val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
       };
@@ -293,10 +293,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       } else if (hasDiscount) boxHeight += 8;
       if (hasDiscount) boxHeight += 8;
 
-      // Check if we need a page break with the actual box height
-      // If y is already beyond the safe area (which can happen if the table ended right at the margin),
-      // or if the box won't fit, we move to a new page.
-      if (y + boxHeight > pageHeight - SAFE_BOTTOM || y < headerHeight) {
+      if (y + boxHeight + 15 > pageHeight - SAFE_BOTTOM) {
         doc.addPage();
         y = headerHeight;
       }
@@ -316,32 +313,32 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       
       if (!isQuotation) {
         doc.text(`Subtotal:`, totalsX + 5, totalRowY);
-        doc.text(`${formatCurrency(subtotal)}`, pageWidth - 20, totalRowY, { align: "right" });
+        doc.text(`${formatCurrencyLocal(subtotal)}`, pageWidth - 20, totalRowY, { align: "right" });
         totalRowY += 8;
         if (!isExport) {
           if (isInterState) {
             doc.text(`IGST:`, totalsX + 5, totalRowY);
-            doc.text(`${formatCurrency(totalTax)}`, pageWidth - 20, totalRowY, { align: "right" });
+            doc.text(`${formatCurrencyLocal(totalTax)}`, pageWidth - 20, totalRowY, { align: "right" });
             totalRowY += 8;
           } else {
             doc.text(`CGST:`, totalsX + 5, totalRowY);
-            doc.text(`${formatCurrency(totalTax / 2)}`, pageWidth - 20, totalRowY, { align: "right" });
+            doc.text(`${formatCurrencyLocal(totalTax / 2)}`, pageWidth - 20, totalRowY, { align: "right" });
             totalRowY += 8;
             doc.text(`SGST:`, totalsX + 5, totalRowY);
-            doc.text(`${formatCurrency(totalTax / 2)}`, pageWidth - 20, totalRowY, { align: "right" });
+            doc.text(`${formatCurrencyLocal(totalTax / 2)}`, pageWidth - 20, totalRowY, { align: "right" });
             totalRowY += 8;
           }
         }
       } else if (hasDiscount) {
         doc.text(`Total:`, totalsX + 5, totalRowY);
-        doc.text(`${formatCurrency(subtotal)}`, pageWidth - 20, totalRowY, { align: "right" });
+        doc.text(`${formatCurrencyLocal(subtotal)}`, pageWidth - 20, totalRowY, { align: "right" });
         totalRowY += 8;
       }
 
       if (hasDiscount) {
         const discountLabel = discountRate > 0 ? `Discount (${discountRate}%):` : `Discount:`;
         doc.text(discountLabel, totalsX + 5, totalRowY);
-        doc.text(`- ${formatCurrency(discount)}`, pageWidth - 20, totalRowY, { align: "right" });
+        doc.text(`- ${formatCurrencyLocal(discount)}`, pageWidth - 20, totalRowY, { align: "right" });
         totalRowY += 8;
       }
       
@@ -352,10 +349,22 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
       doc.text(`Grand Total:`, totalsX + 5, totalRowY + 1);
-      const finalTotalDisplay = isExport ? formatCurrency(grandTotal) : `INR ${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const finalTotalDisplay = isExport ? formatCurrencyLocal(grandTotal) : `INR ${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       doc.text(finalTotalDisplay, pageWidth - 20, totalRowY + 1, { align: "right" });
 
-      return totalRowY + 12;
+      // Add Amount in Words
+      const wordsY = totalRowY + 12;
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(80, 80, 80);
+      doc.text("AMOUNT IN WORDS:", 15, wordsY - 2);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(0, 0, 0);
+      const amountWords = numberToWords(grandTotal, currency);
+      const splitWords = doc.splitTextToSize(amountWords, 120);
+      doc.text(splitWords, 15, wordsY + 2);
+
+      return wordsY + (splitWords.length * 4) + 5;
     },
 
     bank_details: (y) => {
@@ -417,8 +426,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
     },
 
     signature: (y) => {
-      const sigHeight = business.signature ? 25 : 15;
-      if (y + sigHeight + 5 > pageHeight - SAFE_BOTTOM) {
+      const sigHeight = business.signature ? 30 : 20;
+      if (y + sigHeight + 10 > pageHeight - SAFE_BOTTOM) {
         doc.addPage();
         y = headerHeight + 5;
       }
@@ -430,12 +439,17 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         try {
           let format = "PNG";
           if (business.signature.startsWith("data:image/jpeg") || business.signature.startsWith("data:image/jpg")) format = "JPEG";
-          doc.addImage(business.signature, format, pageWidth - 55, y + 2, 40, 15);
-          y += 18;
+          
+          // Position signature image centrally between the two text labels
+          // We provide 20mm of vertical space for the signature
+          doc.addImage(business.signature, format, pageWidth - 60, y + 2, 45, 18);
+          y += 22;
         } catch (e) {}
       } else {
-        y += 15;
+        y += 20;
       }
+      
+      doc.setFont("helvetica", "bold");
       doc.text("Authorized Signatory", pageWidth - 15, y, { align: "right" });
       return y + 10;
     }
@@ -447,6 +461,83 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
   });
 
   return doc;
+}
+
+
+function numberToWords(amount: number, currency: string = "INR"): string {
+  const units = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+  const scales = ["", "Thousand", "Million", "Billion", "Trillion"];
+
+  if (amount === 0) return "Zero";
+
+  function convertChunk(num: number): string {
+    let str = "";
+    if (num >= 100) {
+      str += units[Math.floor(num / 100)] + " Hundred ";
+      num %= 100;
+    }
+    if (num >= 20) {
+      str += tens[Math.floor(num / 10)] + " ";
+      num %= 10;
+    }
+    if (num > 0) {
+      str += units[num] + " ";
+    }
+    return str.trim();
+  }
+
+  const isINR = currency === "INR";
+  const wholePart = Math.floor(amount);
+  const decimalPart = Math.round((amount - wholePart) * 100);
+
+  let result = "";
+
+  if (isINR) {
+    // Indian numbering system (Lakhs, Crores)
+    const formatIndian = (num: number): string => {
+      if (num === 0) return "";
+      let res = "";
+      if (num >= 10000000) {
+        res += formatIndian(Math.floor(num / 10000000)) + " Crore ";
+        num %= 10000000;
+      }
+      if (num >= 100000) {
+        res += formatIndian(Math.floor(num / 100000)) + " Lakh ";
+        num %= 100000;
+      }
+      if (num >= 1000) {
+        res += formatIndian(Math.floor(num / 1000)) + " Thousand ";
+        num %= 1000;
+      }
+      if (num > 0) {
+        res += convertChunk(num);
+      }
+      return res.trim();
+    };
+    result = formatIndian(wholePart);
+  } else {
+    // International numbering system
+    let scaleIdx = 0;
+    let tempNum = wholePart;
+    while (tempNum > 0) {
+      const chunk = tempNum % 1000;
+      if (chunk > 0) {
+        result = convertChunk(chunk) + " " + scales[scaleIdx] + " " + result;
+      }
+      tempNum = Math.floor(tempNum / 1000);
+      scaleIdx++;
+    }
+  }
+
+  result = result.trim() || "Zero";
+  const currencyName = isINR ? "Rupees" : (currency === "USD" ? "Dollars" : currency);
+  const subCurrencyName = isINR ? "Paise" : (currency === "USD" ? "Cents" : "Cents");
+
+  if (decimalPart > 0) {
+    return `${currencyName} ${result} and ${convertChunk(decimalPart)} ${subCurrencyName} Only`;
+  }
+  return `${currencyName} ${result} Only`;
 }
 
 export async function downloadInvoicePDF(data: InvoiceData): Promise<void> {
