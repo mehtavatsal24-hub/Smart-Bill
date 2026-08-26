@@ -20,6 +20,9 @@ export interface BusinessDetails {
   bankName?: string;
   accountNumber?: string;
   ifscCode?: string;
+  bankBranchSwift?: string;
+  enabledBankDocTypes?: string[];
+  printMode?: "plain" | "preprinted";
   layoutSettings?: PDFLayoutSettings;
 }
 
@@ -73,6 +76,7 @@ export interface DocumentHistoryItem {
   total: number;
   inrTotal?: number;
   currency?: string;
+  editCount?: number;
   fullData?: InvoiceData;
 }
 
@@ -91,6 +95,9 @@ export interface LineItem {
   boxNo?: string;
 }
 
+export type ChargeType = "inclusive" | "extra" | "none";
+export type ChargeTaxTiming = "before_tax" | "after_tax";
+
 export interface InvoiceData {
   id: string;
   type: DocumentType;
@@ -101,6 +108,9 @@ export interface InvoiceData {
   items: LineItem[];
   notes: string;
   terms: string;
+  termsList?: string[];
+  showNotes?: boolean;
+  showTerms?: boolean;
   transport?: string;
   poNumber?: string;
   poDate?: string;
@@ -121,6 +131,25 @@ export interface InvoiceData {
   consigneeName?: string;
   consigneeGstin?: string;
   consigneeAddress?: string;
+
+  // Shipping & Logistics Information
+  preCarriageBy?: string;
+  placeOfReceipt?: string;
+  vehicleNo?: string;
+  finalDestination?: string;
+  buyerClientDetails?: string;
+
+  // Freight & Packaging Charges
+  freightType?: ChargeType;
+  freightAmount?: number;
+  freightTaxTiming?: ChargeTaxTiming;
+  freightTaxRate?: number;
+
+  packagingType?: ChargeType;
+  packagingAmount?: number;
+  packagingTaxTiming?: ChargeTaxTiming;
+  packagingTaxRate?: number;
+
   isExport?: boolean;
   currency?: string;
   exchangeRate?: number;

@@ -13,7 +13,7 @@ const DEFAULT_LAYOUT: PDFLayoutSettings = {
 export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
   const doc = new jsPDF();
   const { business, layoutSettings = DEFAULT_LAYOUT } = data;
-  const hasLetterhead = !!business.letterhead;
+  const hasLetterhead = !!business.letterhead && business.printMode !== "preprinted";
   const pageWidth = doc.internal.pageSize.width;
   const pageHeight = doc.internal.pageSize.height;
 
@@ -25,7 +25,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
   // Function to add letterhead to a page
   const addLetterhead = () => {
-    if (business.letterhead) {
+    if (business.letterhead && business.printMode !== "preprinted") {
       try {
         let format = "JPEG";
         if (business.letterhead.startsWith("data:image/png")) format = "PNG";
@@ -38,7 +38,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
   };
 
   // Override addPage to automatically add letterhead to new pages
-  // This ensures it's drawn first and doesn't cover content
   const originalAddPage = doc.addPage.bind(doc);
   (doc as any).addPage = function(...args: any[]) {
     originalAddPage(...args);
@@ -106,17 +105,27 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         advancePercentage,
         consigneeName,
         consigneeGstin,
-        consigneeAddress
+        consigneeAddress,
+        preCarriageBy,
+        placeOfReceipt,
+        vehicleNo,
+        finalDestination,
+        buyerClientDetails
       } = data;
       const isPackingList = type === DocumentType.PACKING_LIST;
 
       if (isPackingList) {
         const packingRows = [
-          ["CLIENT", customer.name],
+          ["CLIENT / BUYER", customer.name],
+          buyerClientDetails ? ["BUYER DETAILS", buyerClientDetails] : null,
           ["MANUFACTURER", business.name],
           ["P O NO & DATE", `${poNumber || "-"} ${poDate ? `DT-${format(new Date(poDate), "dd-MM-yyyy")}` : `DT-${format(new Date(date), "dd-MM-yyyy")}`}`],
+          preCarriageBy ? ["DISPATCH MODE", preCarriageBy] : null,
+          placeOfReceipt ? ["PLACE OF RECEIPT", placeOfReceipt] : null,
+          vehicleNo ? ["VEHICLE NO", vehicleNo] : null,
+          finalDestination || destination ? ["FINAL DESTINATION", finalDestination || destination] : null,
           consigneeName ? ["CONSIGNEE", consigneeName] : null,
-          consigneeAddress ? ["DESTINATION", consigneeAddress] : null,
+          consigneeAddress ? ["CONSIGNEE ADDR", consigneeAddress] : null,
         ].filter(Boolean) as string[][];
 
         autoTable(doc, {
@@ -124,7 +133,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
           body: packingRows,
           theme: 'grid',
           styles: { fontSize: 9, cellPadding: 3, textColor: [0, 0, 0], font: "helvetica" },
-          columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold', fillColor: [240, 240, 240] }, 1: { cellWidth: 'auto' } },
+          columnStyles: { 0: { cellWidth: 45, fontStyle: 'bold', fillColor: [240, 240, 240] }, 1: { cellWidth: 'auto' } },
           margin: { left: 15, right: 15, top: headerHeight },
         });
 
@@ -175,8 +184,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         modeOfPayment ? ["Payment Mode:", modeOfPayment] : null,
         paymentTermsText ? ["Payment Terms:", paymentTermsText] : null,
         advancePercentage ? ["Advance (%):", `${advancePercentage}%`] : null,
-        despatchedThrough || transport ? ["Despatched Via:", despatchedThrough || transport || "-"] : null,
-        destination ? ["Destination:", destination] : null,
+        despatchedThrough || transport || vehicleNo ? ["Despatched Via:", despatchedThrough || transport || vehicleNo || "-"] : null,
+        destination || finalDestination ? ["Destination:", destination || finalDestination || "-"] : null,
         noOfPackages ? ["Packages:", noOfPackages] : null,
         dispatchRef ? ["Dispatch Ref:", dispatchRef] : null,
         transportationReason ? ["Reason:", transportationReason] : null,
@@ -335,16 +344,36 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         customer, 
         applyTax = true, 
         applyIgst = false, 
-        showChallanPrices = true 
+        showChallanPrices = true,
+        freightType = "none",
+        freightAmount = 0,
+        freightTaxTiming = "before_tax",
+        freightTaxRate = 0,
+        packagingType = "none",
+        packagingAmount = 0,
+        packagingTaxTiming = "before_tax",
+        packagingTaxRate = 0,
       } = data;
       
       if (type === DocumentType.PACKING_LIST) return y;
       if (type === DocumentType.DELIVERY_CHALLAN && showChallanPrices === false) return y;
       
-      const subtotal = Math.round(items.reduce((acc, item) => acc + (item.isRegret ? 0 : item.quantity * item.rate), 0) * 100) / 100;
+      const itemsSubtotal = Math.round(items.reduce((acc, item) => acc + (item.isRegret ? 0 : item.quantity * item.rate), 0) * 100) / 100;
       const isQuotation = type === DocumentType.QUOTATION;
-      const totalTax = (isQuotation || !applyTax) ? 0 : Math.round(items.reduce((acc, item) => acc + (item.isRegret ? 0 : (item.quantity * item.rate * item.taxRate) / 100), 0) * 100) / 100;
-      const grandTotal = Math.max(0, Math.round((subtotal + totalTax - discount) * 100) / 100);
+      
+      const freightTaxable = (freightType === "extra" && freightTaxTiming === "before_tax") ? freightAmount : 0;
+      const packagingTaxable = (packagingType === "extra" && packagingTaxTiming === "before_tax") ? packagingAmount : 0;
+      
+      const itemsTax = (isQuotation || !applyTax) ? 0 : Math.round(items.reduce((acc, item) => acc + (item.isRegret ? 0 : (item.quantity * item.rate * item.taxRate) / 100), 0) * 100) / 100;
+      const freightTax = (isQuotation || !applyTax || freightTaxable === 0) ? 0 : (freightTaxable * freightTaxRate) / 100;
+      const packagingTax = (isQuotation || !applyTax || packagingTaxable === 0) ? 0 : (packagingTaxable * packagingTaxRate) / 100;
+      
+      const totalTax = Math.round((itemsTax + freightTax + packagingTax) * 100) / 100;
+      
+      const freightNonTaxable = (freightType === "extra" && freightTaxTiming === "after_tax") ? freightAmount : 0;
+      const packagingNonTaxable = (packagingType === "extra" && packagingTaxTiming === "after_tax") ? packagingAmount : 0;
+
+      const grandTotal = Math.max(0, Math.round((itemsSubtotal + freightTaxable + packagingTaxable + totalTax + freightNonTaxable + packagingNonTaxable - discount) * 100) / 100);
       const currencySymbol = currency === "INR" ? "Rs." : (CURRENCY_SYMBOLS[currency] || currency);
 
       const formatCurrencyLocal = (val: number) => {
@@ -359,7 +388,9 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       const isInterState = applyIgst || !!(isValidBizState && isValidCustState && bizStateCode !== custStateCode) || isExport;
 
       const hasDiscount = discount > 0;
-      let boxHeight = 12;
+      let boxHeight = 16;
+      if (freightType !== "none") boxHeight += 8;
+      if (packagingType !== "none") boxHeight += 8;
       if (!isQuotation) {
         boxHeight += 8;
         if (!isExport) boxHeight += isInterState ? 8 : 16;
@@ -371,12 +402,12 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         y = headerHeight;
       }
 
-      const totalsX = pageWidth - 85;
+      const totalsX = pageWidth - 90;
       doc.setDrawColor(200, 200, 200);
       doc.setFillColor(252, 252, 252);
       
-      doc.rect(totalsX, y - 5, 70, boxHeight, "F");
-      doc.rect(totalsX, y - 5, 70, boxHeight, "S");
+      doc.rect(totalsX, y - 5, 75, boxHeight, "F");
+      doc.rect(totalsX, y - 5, 75, boxHeight, "S");
       
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
@@ -384,10 +415,31 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       
       let totalRowY = y + 1;
       
-      if (!isQuotation) {
-        doc.text(`Subtotal:`, totalsX + 5, totalRowY);
-        doc.text(`${formatCurrencyLocal(subtotal)}`, pageWidth - 20, totalRowY, { align: "right" });
+      doc.text(`Subtotal:`, totalsX + 5, totalRowY);
+      doc.text(`${formatCurrencyLocal(itemsSubtotal)}`, pageWidth - 20, totalRowY, { align: "right" });
+      totalRowY += 8;
+
+      if (freightType === "inclusive") {
+        doc.text(`Freight Charge:`, totalsX + 5, totalRowY);
+        doc.text(`Inclusive`, pageWidth - 20, totalRowY, { align: "right" });
         totalRowY += 8;
+      } else if (freightType === "extra") {
+        doc.text(`Freight Charge:`, totalsX + 5, totalRowY);
+        doc.text(`${formatCurrencyLocal(freightAmount)}`, pageWidth - 20, totalRowY, { align: "right" });
+        totalRowY += 8;
+      }
+
+      if (packagingType === "inclusive") {
+        doc.text(`Packaging & Forwarding:`, totalsX + 5, totalRowY);
+        doc.text(`Inclusive`, pageWidth - 20, totalRowY, { align: "right" });
+        totalRowY += 8;
+      } else if (packagingType === "extra") {
+        doc.text(`Packaging & Forwarding:`, totalsX + 5, totalRowY);
+        doc.text(`${formatCurrencyLocal(packagingAmount)}`, pageWidth - 20, totalRowY, { align: "right" });
+        totalRowY += 8;
+      }
+
+      if (!isQuotation) {
         if (!isExport) {
           if (isInterState) {
             doc.text(`IGST:`, totalsX + 5, totalRowY);
@@ -402,10 +454,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             totalRowY += 8;
           }
         }
-      } else if (hasDiscount) {
-        doc.text(`Total:`, totalsX + 5, totalRowY);
-        doc.text(`${formatCurrencyLocal(subtotal)}`, pageWidth - 20, totalRowY, { align: "right" });
-        totalRowY += 8;
       }
 
       if (hasDiscount) {
@@ -442,7 +490,10 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
     bank_details: (y) => {
       if (!business.bankName) return y;
-      const bankBoxHeight = 20;
+      if (business.enabledBankDocTypes && business.enabledBankDocTypes.length > 0) {
+        if (!business.enabledBankDocTypes.includes(data.type)) return y;
+      }
+      const bankBoxHeight = 25;
       if (y + bankBoxHeight + 5 > pageHeight - SAFE_BOTTOM) {
         doc.addPage();
         y = headerHeight;
@@ -454,29 +505,33 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       doc.text(`Bank: ${business.bankName}`, 15, y + 5);
       doc.text(`A/C: ${business.accountNumber}`, 15, y + 10);
       doc.text(`IFSC: ${business.ifscCode}`, 15, y + 15);
+      if (business.bankBranchSwift) {
+        doc.text(`Branch/SWIFT: ${business.bankBranchSwift}`, 15, y + 20);
+        return y + 25;
+      }
       return y + 20;
     },
 
     terms: (y) => {
-      const { notes, terms, type } = data;
+      const { notes, terms, type, showNotes = true, showTerms = true } = data;
       
-      if ((!notes && !terms) || type === DocumentType.PACKING_LIST) return y;
+      if (type === DocumentType.PACKING_LIST) return y;
+      if (!showNotes && !showTerms) return y;
 
-      // Check if we have enough space to start the terms section
-      // If not, move to a new page
-      if (y + 20 > pageHeight - SAFE_BOTTOM) {
-        doc.addPage();
-        y = headerHeight;
-      }
-      
       const body = [];
-      if (notes && notes.trim()) {
+      if (showNotes && notes && notes.trim()) {
         body.push(["NOTES / PAYMENT INSTRUCTIONS"]);
         body.push([notes]);
       }
-      if (terms && terms.trim()) {
+      if (showTerms && terms && terms.trim()) {
         body.push(["TERMS & CONDITIONS"]);
         body.push([terms]);
+      }
+      if (body.length === 0) return y;
+
+      if (y + 20 > pageHeight - SAFE_BOTTOM) {
+        doc.addPage();
+        y = headerHeight;
       }
 
       autoTable(doc, {

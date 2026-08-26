@@ -43,7 +43,9 @@ import {
   PriceHistoryItem,
   AIDocumentAnalysis,
   PDFLayoutSettings,
-  LastUsedNotesAndTerms
+  LastUsedNotesAndTerms,
+  ChargeType,
+  ChargeTaxTiming
 } from "./types";
 import { validateGSTIN, validateEmail, validatePhone, validateRequired } from "./lib/validation";
 import { DEFAULT_TERMS, DOCUMENT_TYPE_OPTIONS, CURRENCY_SYMBOLS, OWNER_EMAIL } from "./constants";
@@ -58,6 +60,10 @@ import { CustomerSelector } from "./components/CustomerSelector";
 import { Dashboard } from "./components/Dashboard";
 import { PartyList } from "./components/PartyList";
 import { DocumentReferenceDetails } from "./components/DocumentReferenceDetails";
+import { ShippingLogisticsSection } from "./components/ShippingLogisticsSection";
+import { AIBulkItemEditor } from "./components/AIBulkItemEditor";
+import { NotesAndTermsSection } from "./components/NotesAndTermsSection";
+import { FreightPackagingSection } from "./components/FreightPackagingSection";
 import { generateInvoicePDF, downloadInvoicePDF } from "./services/pdfService";
 import { generateInvoiceNotes, analyzeCustomerPatterns, analyzeLetterhead } from "./services/geminiService";
 import { HistoryList } from "./components/HistoryList";
@@ -242,6 +248,28 @@ export default function App() {
   const [consigneeName, setConsigneeName] = useState("");
   const [consigneeGstin, setConsigneeGstin] = useState("");
   const [consigneeAddress, setConsigneeAddress] = useState("");
+
+  // Shipping & Logistics State
+  const [preCarriageBy, setPreCarriageBy] = useState("");
+  const [placeOfReceipt, setPlaceOfReceipt] = useState("");
+  const [vehicleNo, setVehicleNo] = useState("");
+  const [finalDestination, setFinalDestination] = useState("");
+  const [buyerClientDetails, setBuyerClientDetails] = useState("");
+
+  // Freight & Packaging Charges State
+  const [freightType, setFreightType] = useState<ChargeType>("none");
+  const [freightAmount, setFreightAmount] = useState(0);
+  const [freightTaxTiming, setFreightTaxTiming] = useState<ChargeTaxTiming>("before_tax");
+  const [freightTaxRate, setFreightTaxRate] = useState(18);
+
+  const [packagingType, setPackagingType] = useState<ChargeType>("none");
+  const [packagingAmount, setPackagingAmount] = useState(0);
+  const [packagingTaxTiming, setPackagingTaxTiming] = useState<ChargeTaxTiming>("before_tax");
+  const [packagingTaxRate, setPackagingTaxRate] = useState(18);
+
+  // Notes & Terms Visibility State
+  const [showNotes, setShowNotes] = useState(true);
+  const [showTerms, setShowTerms] = useState(true);
 
   const calculatedDueDate = useMemo(() => {
     if (!date || !paymentTermsDays || paymentTermsDays <= 0) return "";
@@ -986,13 +1014,24 @@ export default function App() {
       }
     });
 
-    const totalBeforeDiscount = subtotal + tax;
+    const freightTaxable = (freightType === "extra" && freightTaxTiming === "before_tax") ? freightAmount : 0;
+    const packagingTaxable = (packagingType === "extra" && packagingTaxTiming === "before_tax") ? packagingAmount : 0;
+    const freightNonTaxable = (freightType === "extra" && freightTaxTiming === "after_tax") ? freightAmount : 0;
+    const packagingNonTaxable = (packagingType === "extra" && packagingTaxTiming === "after_tax") ? packagingAmount : 0;
+
+    if (!isQuotation && !isStandardExport && applyTax) {
+      if (freightTaxable > 0) tax += (freightTaxable * freightTaxRate) / 100;
+      if (packagingTaxable > 0) tax += (packagingTaxable * packagingTaxRate) / 100;
+    }
+
+    const grossSubtotal = subtotal + freightTaxable + packagingTaxable;
+    const totalBeforeDiscount = grossSubtotal + tax + freightNonTaxable + packagingNonTaxable;
     const discountAmount = (totalBeforeDiscount * discountRate) / 100;
     const total = Math.max(0, totalBeforeDiscount - discountAmount);
     const inrTotal = isExport ? total * exchangeRate : total;
 
     return { 
-      subtotal, 
+      subtotal: grossSubtotal, 
       tax, 
       total, 
       convertedTotal: total, 
@@ -1000,7 +1039,7 @@ export default function App() {
       discount: discountAmount, 
       discountRate 
     };
-  }, [items, docType, isExport, exchangeRate, discountRate]);
+  }, [items, docType, isExport, exchangeRate, discountRate, applyTax, freightType, freightAmount, freightTaxTiming, freightTaxRate, packagingType, packagingAmount, packagingTaxTiming, packagingTaxRate]);
 
   // Handlers
   const addItem = useCallback(() => {
@@ -1179,6 +1218,8 @@ export default function App() {
         items,
         notes,
         terms,
+        showNotes,
+        showTerms,
         transport,
         poNumber,
         poDate,
@@ -1199,6 +1240,19 @@ export default function App() {
         consigneeName,
         consigneeGstin,
         consigneeAddress,
+        preCarriageBy,
+        placeOfReceipt,
+        vehicleNo,
+        finalDestination,
+        buyerClientDetails,
+        freightType,
+        freightAmount,
+        freightTaxTiming,
+        freightTaxRate,
+        packagingType,
+        packagingAmount,
+        packagingTaxTiming,
+        packagingTaxRate,
         isExport,
         currency: isExport ? currency : "INR",
         exchangeRate: isExport ? exchangeRate : 1,
@@ -1207,9 +1261,13 @@ export default function App() {
         layoutSettings,
       };
 
+      const baseId = finalDocId.split(' ')[0];
+      const previousVersions = history.filter(h => h.id === finalDocId || h.id.startsWith(baseId));
+      const editCount = previousVersions.length > 0 ? previousVersions.length + 1 : 1;
+
       // Add to history (strip bulky letterhead/logo/signature to save space)
       const historyItem: DocumentHistoryItem = {
-        id: finalDocId,
+        id: editCount > 1 ? `${finalDocId} (v${editCount})` : finalDocId,
         timestamp: Date.now(),
         type: docType,
         date,
@@ -1217,8 +1275,10 @@ export default function App() {
         total: totals.convertedTotal,
         inrTotal: totals.inrTotal,
         currency: isExport ? currency : "INR",
+        editCount: editCount,
         fullData: {
           ...data,
+          id: editCount > 1 ? `${finalDocId} (v${editCount})` : finalDocId,
           business: { 
             ...business, 
             letterhead: undefined,
@@ -1227,7 +1287,7 @@ export default function App() {
           }
         }
       };
-      setHistory(prev => [...prev, historyItem]);
+      setHistory(prev => [historyItem, ...prev]);
 
       // Update last used numbers
       const prefix = getShortForm(business.name);
@@ -1359,6 +1419,21 @@ export default function App() {
     setConsigneeName(data.consigneeName || "");
     setConsigneeGstin(data.consigneeGstin || "");
     setConsigneeAddress(data.consigneeAddress || "");
+    setPreCarriageBy(data.preCarriageBy || "");
+    setPlaceOfReceipt(data.placeOfReceipt || "");
+    setVehicleNo(data.vehicleNo || "");
+    setFinalDestination(data.finalDestination || "");
+    setBuyerClientDetails(data.buyerClientDetails || "");
+    setFreightType(data.freightType || "none");
+    setFreightAmount(data.freightAmount || 0);
+    setFreightTaxTiming(data.freightTaxTiming || "before_tax");
+    setFreightTaxRate(data.freightTaxRate || 18);
+    setPackagingType(data.packagingType || "none");
+    setPackagingAmount(data.packagingAmount || 0);
+    setPackagingTaxTiming(data.packagingTaxTiming || "before_tax");
+    setPackagingTaxRate(data.packagingTaxRate || 18);
+    setShowNotes(data.showNotes ?? true);
+    setShowTerms(data.showTerms ?? true);
     setDiscountRate(data.discountRate || 0);
     setIsExport(data.isExport || false);
     setCurrency(data.currency || "USD");
@@ -1515,6 +1590,116 @@ export default function App() {
         type: "warning"
       });
     }
+  };
+
+  const exportSummaryCSV = () => {
+    if (history.length === 0) {
+      showModal({ title: "No History", message: "No history items available to export.", type: "info" });
+      return;
+    }
+    const headers = [
+      "Document ID", "Document Type", "Date", "Customer/Party", "GSTIN", "Email", "Phone",
+      "PO/Reference Number", "Currency", "Subtotal", "Tax", "Freight", "Packaging", "Discount",
+      "Round Off", "Grand Total", "Grand Total (INR)", "Items Count", "Edit Count"
+    ];
+
+    const rows = history.map((item) => {
+      const d = item.fullData;
+      const freightAmt = d?.freightType === "extra" ? (d.freightAmount || 0) : 0;
+      const pkgAmt = d?.packagingType === "extra" ? (d.packagingAmount || 0) : 0;
+      const discountAmt = d?.discount || 0;
+      const itemsCount = d?.items?.length || 0;
+      const subtotal = d?.items?.reduce((acc, i) => acc + (i.quantity * i.rate), 0) || 0;
+      const tax = d?.applyTax === false ? 0 : d?.items?.reduce((acc, i) => acc + (i.quantity * i.rate * i.taxRate / 100), 0) || 0;
+      const grandTotal = item.total || 0;
+      const grandTotalInr = item.inrTotal || grandTotal;
+
+      return [
+        `"${item.id}"`,
+        `"${item.type}"`,
+        `"${item.date}"`,
+        `"${(item.customerName || d?.customer?.name || "").replace(/"/g, '""')}"`,
+        `"${d?.customer?.gstin || ""}"`,
+        `"${d?.customer?.email || ""}"`,
+        `"${d?.customer?.phone || ""}"`,
+        `"${d?.poNumber || ""}"`,
+        `"${item.currency || "INR"}"`,
+        subtotal.toFixed(2),
+        tax.toFixed(2),
+        freightAmt.toFixed(2),
+        pkgAmt.toFixed(2),
+        discountAmt.toFixed(2),
+        "0.00",
+        grandTotal.toFixed(2),
+        grandTotalInr.toFixed(2),
+        String(itemsCount),
+        String(item.editCount || 1),
+      ];
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `SmartBill_Documents_Summary_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportItemsCSV = () => {
+    if (history.length === 0) {
+      showModal({ title: "No History", message: "No history items available to export.", type: "info" });
+      return;
+    }
+    const headers = [
+      "Document ID", "Document Type", "Date", "Customer/Party", "GSTIN", "PO Number",
+      "Currency", "Item #", "Description", "HSN/SAC", "Quantity", "Unit", "Rate",
+      "Line Subtotal", "Tax Rate (%)", "Tax Amount", "Line Total", "Heat/Lot No", "Box/Packaging"
+    ];
+
+    const rows: string[][] = [];
+
+    history.forEach((docItem) => {
+      const d = docItem.fullData;
+      const itemsList = d?.items || [];
+      itemsList.forEach((item, idx) => {
+        const lineSubtotal = item.quantity * item.rate;
+        const taxAmt = d?.applyTax === false ? 0 : (lineSubtotal * item.taxRate) / 100;
+        const lineTotal = lineSubtotal + taxAmt;
+
+        rows.push([
+          `"${docItem.id}"`,
+          `"${docItem.type}"`,
+          `"${docItem.date}"`,
+          `"${(docItem.customerName || d?.customer?.name || "").replace(/"/g, '""')}"`,
+          `"${d?.customer?.gstin || ""}"`,
+          `"${d?.poNumber || ""}"`,
+          `"${docItem.currency || "INR"}"`,
+          String(idx + 1),
+          `"${(item.description || "").replace(/"/g, '""')}"`,
+          `"${item.hsn || ""}"`,
+          String(item.quantity),
+          `"${item.unit || "NOS"}"`,
+          item.rate.toFixed(2),
+          lineSubtotal.toFixed(2),
+          String(item.taxRate),
+          taxAmt.toFixed(2),
+          lineTotal.toFixed(2),
+          `"${item.heatNo || ""}"`,
+          `"${item.boxNo || ""}"`,
+        ]);
+      });
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `SmartBill_Items_Export_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const importData = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1713,6 +1898,8 @@ export default function App() {
                 onOpenDocument={loadDocument}
                 onDownloadPDF={downloadPDF}
                 onDeleteDocument={deleteDocument}
+                onExportSummaryCSV={exportSummaryCSV}
+                onExportItemsCSV={exportItemsCSV}
                 onBack={() => setStep("dashboard")}
               />
             </motion.div>
@@ -1963,24 +2150,187 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="pt-6 border-t border-zinc-100">
-                    <h4 className="text-xs font-bold text-zinc-400 uppercase mb-4">Bank Details (Optional)</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Letterhead & Printing Section */}
+                  <div className="pt-6 border-t border-zinc-100 space-y-4">
+                    <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider">
+                      Letterhead & Printing Settings
+                    </h4>
+                    
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-600 mb-2">Target Printing Paper</label>
+                      <div className="flex flex-wrap gap-4">
+                        <label className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all ${
+                          business.printMode !== "preprinted"
+                            ? "bg-brand-50 border-brand-300 text-brand-900 shadow-sm"
+                            : "bg-zinc-50 border-zinc-200 text-zinc-700"
+                        }`}>
+                          <input 
+                            type="radio" 
+                            name="printMode"
+                            checked={business.printMode !== "preprinted"} 
+                            onChange={() => handleBusinessChange({ printMode: "plain" })}
+                            className="accent-brand-600"
+                          />
+                          <div>
+                            <p className="text-xs font-extrabold">Plain Paper</p>
+                            <p className="text-[10px] text-zinc-500">Includes uploaded letterhead background on generated PDFs</p>
+                          </div>
+                        </label>
+
+                        <label className={`flex items-center gap-3 p-3 border rounded-2xl cursor-pointer transition-all ${
+                          business.printMode === "preprinted"
+                            ? "bg-brand-50 border-brand-300 text-brand-900 shadow-sm"
+                            : "bg-zinc-50 border-zinc-200 text-zinc-700"
+                        }`}>
+                          <input 
+                            type="radio" 
+                            name="printMode"
+                            checked={business.printMode === "preprinted"} 
+                            onChange={() => handleBusinessChange({ printMode: "preprinted" })}
+                            className="accent-brand-600"
+                          />
+                          <div>
+                            <p className="text-xs font-extrabold">Pre-printed Letterhead</p>
+                            <p className="text-[10px] text-zinc-500">Hides background so you can print on physical letterhead paper</p>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-600 mb-1">Header Height (mm)</label>
+                        <input 
+                          type="number"
+                          min="0"
+                          max="150"
+                          className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none"
+                          value={layoutSettings.headerHeight ?? (business.letterhead ? 65 : 25)}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 25;
+                            const updated = { ...layoutSettings, headerHeight: val };
+                            setLayoutSettings(updated);
+                            safeSave("pdf_layout_settings", updated, user?.uid);
+                          }}
+                        />
+                        <p className="text-[10px] text-zinc-400 mt-1">Defines top margin gap to prevent header content overlap.</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-600 mb-1">Footer Height (mm)</label>
+                        <input 
+                          type="number"
+                          min="0"
+                          max="150"
+                          className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-semibold focus:outline-none"
+                          value={layoutSettings.footerHeight ?? (business.letterhead ? 40 : 20)}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 20;
+                            const updated = { ...layoutSettings, footerHeight: val };
+                            setLayoutSettings(updated);
+                            safeSave("pdf_layout_settings", updated, user?.uid);
+                          }}
+                        />
+                        <p className="text-[10px] text-zinc-400 mt-1">Defines bottom margin gap to prevent footer content overlap.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bank Details Section */}
+                  <div className="pt-6 border-t border-zinc-100 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider">
+                        Bank Details & Document Selection
+                      </h4>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allTypes = Object.values(DocumentType).concat("Cost Sheet" as any);
+                            handleBusinessChange({ enabledBankDocTypes: allTypes });
+                          }}
+                          className="text-[11px] font-extrabold text-brand-600 hover:text-brand-800"
+                        >
+                          Select All
+                        </button>
+                        <span className="text-zinc-300">|</span>
+                        <button
+                          type="button"
+                          onClick={() => handleBusinessChange({ enabledBankDocTypes: [] })}
+                          className="text-[11px] font-extrabold text-red-500 hover:text-red-700"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <Input 
                         label="Bank Name" 
                         value={business.bankName} 
                         onChange={(e) => handleBusinessChange({ bankName: e.target.value })}
+                        placeholder="e.g. HDFC Bank"
                       />
                       <Input 
                         label="Account Number" 
                         value={business.accountNumber} 
                         onChange={(e) => handleBusinessChange({ accountNumber: e.target.value })}
+                        placeholder="e.g. 50100012345678"
                       />
                       <Input 
                         label="IFSC Code" 
                         value={business.ifscCode} 
                         onChange={(e) => handleBusinessChange({ ifscCode: e.target.value })}
+                        placeholder="e.g. HDFC0001234"
                       />
+                      <Input 
+                        label="Branch Code / SWIFT" 
+                        value={business.bankBranchSwift || ""} 
+                        onChange={(e) => handleBusinessChange({ bankBranchSwift: e.target.value })}
+                        placeholder="e.g. HDFCINBB"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-600 mb-2">
+                        Display Bank Details on Selected Documents:
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          DocumentType.TAX_INVOICE,
+                          DocumentType.DELIVERY_CHALLAN,
+                          DocumentType.PROFORMA_INVOICE,
+                          DocumentType.QUOTATION,
+                          DocumentType.PURCHASE_ORDER,
+                          DocumentType.PACKING_LIST,
+                          "Cost Sheet"
+                        ].map((docTypeItem) => {
+                          const enabledList = business.enabledBankDocTypes || Object.values(DocumentType);
+                          const isSelected = enabledList.includes(docTypeItem);
+                          return (
+                            <button
+                              key={docTypeItem}
+                              type="button"
+                              onClick={() => {
+                                let updated: string[];
+                                if (isSelected) {
+                                  updated = enabledList.filter((d) => d !== docTypeItem);
+                                } else {
+                                  updated = [...enabledList, docTypeItem];
+                                }
+                                handleBusinessChange({ enabledBankDocTypes: updated });
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                                isSelected
+                                  ? "bg-zinc-900 text-white border-zinc-800 shadow-sm"
+                                  : "bg-zinc-100 text-zinc-500 border-zinc-200 hover:bg-zinc-200"
+                              }`}
+                            >
+                              {docTypeItem} {isSelected ? "✓" : "+"}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
@@ -2133,6 +2483,31 @@ export default function App() {
                 setConsigneeAddress={setConsigneeAddress}
               />
 
+              {/* Shipping & Logistics Information (For Packing List and document reference) */}
+              <ShippingLogisticsSection
+                docType={docType}
+                preCarriageBy={preCarriageBy}
+                setPreCarriageBy={setPreCarriageBy}
+                placeOfReceipt={placeOfReceipt}
+                setPlaceOfReceipt={setPlaceOfReceipt}
+                vehicleNo={vehicleNo}
+                setVehicleNo={setVehicleNo}
+                finalDestination={finalDestination}
+                setFinalDestination={setFinalDestination}
+                buyerClientDetails={buyerClientDetails}
+                setBuyerClientDetails={setBuyerClientDetails}
+                despatchedThrough={despatchedThrough}
+                setDespatchedThrough={setDespatchedThrough}
+                destination={destination}
+                setDestination={setDestination}
+                noOfPackages={noOfPackages}
+                setNoOfPackages={setNoOfPackages}
+                dispatchRef={dispatchRef}
+                setDispatchRef={setDispatchRef}
+                transportationReason={transportationReason}
+                setTransportationReason={setTransportationReason}
+              />
+
               {/* Customer/Supplier Details */}
               <Card>
                 <CardHeader 
@@ -2220,6 +2595,9 @@ export default function App() {
                 </CardContent>
               </Card>
 
+              {/* AI Bulk Line Item Editor */}
+              <AIBulkItemEditor items={items} setItems={setItems} />
+
               {/* Line Items */}
               <Card>
                 <CardHeader 
@@ -2288,92 +2666,62 @@ export default function App() {
                 </CardContent>
               </Card>
 
+              {/* Freight & Packaging Charges */}
+              <FreightPackagingSection
+                freightType={freightType}
+                setFreightType={setFreightType}
+                freightAmount={freightAmount}
+                setFreightAmount={setFreightAmount}
+                freightTaxTiming={freightTaxTiming}
+                setFreightTaxTiming={setFreightTaxTiming}
+                freightTaxRate={freightTaxRate}
+                setFreightTaxRate={setFreightTaxRate}
+                packagingType={packagingType}
+                setPackagingType={setPackagingType}
+                packagingAmount={packagingAmount}
+                setPackagingAmount={setPackagingAmount}
+                packagingTaxTiming={packagingTaxTiming}
+                setPackagingTaxTiming={setPackagingTaxTiming}
+                packagingTaxRate={packagingTaxRate}
+                setPackagingTaxRate={setPackagingTaxRate}
+              />
+
               {/* Totals & Notes */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader 
-                    title="Notes & Terms" 
-                    action={
-                      <div className="flex items-center gap-2">
-                        {isAnalyzingPatterns && (
-                          <span className="text-[10px] text-zinc-400 animate-pulse">Analyzing patterns...</span>
-                        )}
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className={`${suggestedNotes ? "text-blue-600 hover:text-blue-700 hover:bg-blue-50" : "text-zinc-300 cursor-not-allowed"}`}
-                          disabled={!suggestedNotes}
-                          onClick={() => {
-                            if (suggestedNotes) {
-                              setNotes(suggestedNotes.notes);
-                              setTerms(suggestedNotes.terms);
-                              showModal({
-                                title: "AI Pattern Applied",
-                                message: `Applied notes and terms typically used for ${customer.name}.`,
-                                type: "success"
-                              });
-                            }
-                          }}
-                        >
-                          Apply Client Pattern
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="text-zinc-500"
-                          onClick={() => {
-                            const common = getMostCommonNotesAndTerms();
-                            setNotes(common.notes);
-                            setTerms(common.terms);
-                            showModal({
-                              title: "Standard Pattern Applied",
-                              message: "Applied your most frequently used notes and terms.",
-                              type: "success"
-                            });
-                          }}
-                        >
-                          Use Most Regular
-                        </Button>
-                      </div>
+                <NotesAndTermsSection
+                  notes={notes}
+                  setNotes={setNotes}
+                  terms={terms}
+                  setTerms={setTerms}
+                  showNotes={showNotes}
+                  setShowNotes={setShowNotes}
+                  showTerms={showTerms}
+                  setShowTerms={setShowTerms}
+                  customerName={customer.name}
+                  onApplyClientPattern={() => {
+                    if (suggestedNotes) {
+                      setNotes(suggestedNotes.notes);
+                      setTerms(suggestedNotes.terms);
+                      showModal({
+                        title: "AI Pattern Applied",
+                        message: `Applied notes and terms typically used for ${customer.name}.`,
+                        type: "success"
+                      });
                     }
-                  />
-                  <CardContent className="space-y-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Notes / Payment Instructions</label>
-                      <textarea 
-                        className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-zinc-900/5 resize-none overflow-hidden disabled:opacity-50"
-                        placeholder="Add any specific notes or payment instructions..."
-                        value={notes ?? ""}
-                        onChange={(e) => {
-                          setNotes(e.target.value);
-                          e.target.style.height = 'auto';
-                          e.target.style.height = e.target.scrollHeight + 'px';
-                        }}
-                        onInput={(e: any) => {
-                          e.target.style.height = 'auto';
-                          e.target.style.height = e.target.scrollHeight + 'px';
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Terms & Conditions</label>
-                      <textarea 
-                        className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-zinc-900/5 resize-none overflow-hidden disabled:opacity-50"
-                        placeholder="Add standard terms and conditions..."
-                        value={terms ?? ""}
-                        onChange={(e) => {
-                          setTerms(e.target.value);
-                          e.target.style.height = 'auto';
-                          e.target.style.height = e.target.scrollHeight + 'px';
-                        }}
-                        onInput={(e: any) => {
-                          e.target.style.height = 'auto';
-                          e.target.style.height = e.target.scrollHeight + 'px';
-                        }}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
+                  }}
+                  onUseRegularPattern={() => {
+                    const common = getMostCommonNotesAndTerms();
+                    setNotes(common.notes);
+                    setTerms(common.terms);
+                    showModal({
+                      title: "Standard Pattern Applied",
+                      message: "Applied your most frequently used notes and terms.",
+                      type: "success"
+                    });
+                  }}
+                  suggestedNotes={suggestedNotes}
+                  isAnalyzingPatterns={isAnalyzingPatterns}
+                />
 
                 <Card className="bg-zinc-900 text-white border-zinc-800">
                   <CardContent className="p-8 flex flex-col justify-between h-full">

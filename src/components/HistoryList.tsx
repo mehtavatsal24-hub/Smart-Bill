@@ -21,10 +21,20 @@ interface HistoryListProps {
   onOpenDocument: (doc: DocumentHistoryItem) => void;
   onDownloadPDF: (doc: DocumentHistoryItem) => void;
   onDeleteDocument: (timestamp: number) => void;
+  onExportSummaryCSV: () => void;
+  onExportItemsCSV: () => void;
   onBack: () => void;
 }
 
-export const HistoryList = ({ history, onOpenDocument, onDownloadPDF, onDeleteDocument, onBack }: HistoryListProps) => {
+export const HistoryList = ({ 
+  history, 
+  onOpenDocument, 
+  onDownloadPDF, 
+  onDeleteDocument, 
+  onExportSummaryCSV,
+  onExportItemsCSV,
+  onBack 
+}: HistoryListProps) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<string>("All");
 
@@ -42,15 +52,26 @@ export const HistoryList = ({ history, onOpenDocument, onDownloadPDF, onDeleteDo
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={onBack}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
           <div>
             <h2 className="text-2xl font-bold text-zinc-900">Document History</h2>
-            <p className="text-sm text-zinc-500">View and manage all your created documents</p>
+            <p className="text-sm text-zinc-500">View, version, and export all your documents</p>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="outline" size="sm" onClick={onExportSummaryCSV} className="font-bold text-xs">
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
+          <Button variant="primary" size="sm" onClick={onExportItemsCSV} className="font-bold text-xs">
+            <Download className="mr-2 h-4 w-4" />
+            Export Items (CSV)
+          </Button>
         </div>
       </div>
 
@@ -89,6 +110,7 @@ export const HistoryList = ({ history, onOpenDocument, onDownloadPDF, onDeleteDo
                   <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Document</th>
                   <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Customer</th>
                   <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Edits</th>
                   <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Amount</th>
                   <th className="px-6 py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Actions</th>
                 </tr>
@@ -127,6 +149,11 @@ export const HistoryList = ({ history, onOpenDocument, onDownloadPDF, onDeleteDo
                           <Calendar className="h-3 w-3 text-zinc-400" />
                           <p className="text-sm text-zinc-500">{doc.date}</p>
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-extrabold bg-zinc-100 text-zinc-700 border border-zinc-200">
+                          {(doc.editCount || 1) === 1 ? "1 Edit" : `${doc.editCount} Edits`}
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <p className="text-sm font-bold text-zinc-900">
