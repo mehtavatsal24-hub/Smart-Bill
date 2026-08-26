@@ -47,6 +47,7 @@ import {
 } from "./types";
 import { validateGSTIN, validateEmail, validatePhone, validateRequired } from "./lib/validation";
 import { DEFAULT_TERMS, DOCUMENT_TYPE_OPTIONS, CURRENCY_SYMBOLS, OWNER_EMAIL } from "./constants";
+import { addDays, addMonths, addYears, format } from "date-fns";
 import { Input } from "./components/Input";
 import { Button } from "./components/Button";
 import { Card, CardHeader, CardContent } from "./components/Card";
@@ -56,6 +57,7 @@ import { DocumentUpload } from "./components/DocumentUpload";
 import { CustomerSelector } from "./components/CustomerSelector";
 import { Dashboard } from "./components/Dashboard";
 import { PartyList } from "./components/PartyList";
+import { DocumentReferenceDetails } from "./components/DocumentReferenceDetails";
 import { generateInvoicePDF, downloadInvoicePDF } from "./services/pdfService";
 import { generateInvoiceNotes, analyzeCustomerPatterns, analyzeLetterhead } from "./services/geminiService";
 import { HistoryList } from "./components/HistoryList";
@@ -222,6 +224,38 @@ export default function App() {
   const [discountRate, setDiscountRate] = useState(0);
   const [transport, setTransport] = useState("");
   const [poNumber, setPoNumber] = useState("");
+  const [poDate, setPoDate] = useState("");
+  const [validUntilDate, setValidUntilDate] = useState("");
+  const [applyTax, setApplyTax] = useState(true);
+  const [applyIgst, setApplyIgst] = useState(false);
+  const [modeOfPayment, setModeOfPayment] = useState("");
+  const [paymentTermsDays, setPaymentTermsDays] = useState(30);
+  const [paymentTermsUnit, setPaymentTermsUnit] = useState<"Days" | "Months" | "Years">("Days");
+  const [paymentTermsCustom, setPaymentTermsCustom] = useState("");
+  const [despatchedThrough, setDespatchedThrough] = useState("");
+  const [destination, setDestination] = useState("");
+  const [noOfPackages, setNoOfPackages] = useState("");
+  const [dispatchRef, setDispatchRef] = useState("");
+  const [transportationReason, setTransportationReason] = useState("Supply");
+  const [showChallanPrices, setShowChallanPrices] = useState(true);
+  const [advancePercentage, setAdvancePercentage] = useState(0);
+  const [consigneeName, setConsigneeName] = useState("");
+  const [consigneeGstin, setConsigneeGstin] = useState("");
+  const [consigneeAddress, setConsigneeAddress] = useState("");
+
+  const calculatedDueDate = useMemo(() => {
+    if (!date || !paymentTermsDays || paymentTermsDays <= 0) return "";
+    try {
+      const baseDate = new Date(date);
+      let resultDate = baseDate;
+      if (paymentTermsUnit === "Days") resultDate = addDays(baseDate, paymentTermsDays);
+      else if (paymentTermsUnit === "Months") resultDate = addMonths(baseDate, paymentTermsDays);
+      else if (paymentTermsUnit === "Years") resultDate = addYears(baseDate, paymentTermsDays);
+      return format(resultDate, "dd MMM yyyy");
+    } catch (e) {
+      return "";
+    }
+  }, [date, paymentTermsDays, paymentTermsUnit]);
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState(DEFAULT_TERMS);
   const [lastUsedNotesAndTerms, setLastUsedNotesAndTerms] = useState<LastUsedNotesAndTerms>({
@@ -947,7 +981,7 @@ export default function App() {
       const itemAmount = item.quantity * item.rate;
       subtotal += itemAmount;
       
-      if (!isQuotation && !isStandardExport) {
+      if (!isQuotation && !isStandardExport && applyTax) {
         tax += (itemAmount * item.taxRate) / 100;
       }
     });
@@ -1139,7 +1173,7 @@ export default function App() {
         id: finalDocId,
         type: docType,
         date,
-        dueDate: date,
+        dueDate: calculatedDueDate || date,
         business,
         customer,
         items,
@@ -1147,6 +1181,24 @@ export default function App() {
         terms,
         transport,
         poNumber,
+        poDate,
+        validUntilDate,
+        modeOfPayment,
+        paymentTermsDays,
+        paymentTermsUnit,
+        paymentTermsCustom,
+        despatchedThrough,
+        destination,
+        noOfPackages,
+        dispatchRef,
+        transportationReason,
+        showChallanPrices,
+        advancePercentage,
+        applyTax,
+        applyIgst,
+        consigneeName,
+        consigneeGstin,
+        consigneeAddress,
         isExport,
         currency: isExport ? currency : "INR",
         exchangeRate: isExport ? exchangeRate : 1,
@@ -1289,6 +1341,24 @@ export default function App() {
     setTerms(data.terms || DEFAULT_TERMS);
     setTransport(data.transport || "");
     setPoNumber(data.poNumber || "");
+    setPoDate(data.poDate || "");
+    setValidUntilDate(data.validUntilDate || "");
+    setApplyTax(data.applyTax ?? true);
+    setApplyIgst(data.applyIgst ?? false);
+    setModeOfPayment(data.modeOfPayment || "");
+    setPaymentTermsDays(data.paymentTermsDays ?? 30);
+    setPaymentTermsUnit(data.paymentTermsUnit || "Days");
+    setPaymentTermsCustom(data.paymentTermsCustom || "");
+    setDespatchedThrough(data.despatchedThrough || data.transport || "");
+    setDestination(data.destination || "");
+    setNoOfPackages(data.noOfPackages || "");
+    setDispatchRef(data.dispatchRef || "");
+    setTransportationReason(data.transportationReason || "Supply");
+    setShowChallanPrices(data.showChallanPrices ?? true);
+    setAdvancePercentage(data.advancePercentage || 0);
+    setConsigneeName(data.consigneeName || "");
+    setConsigneeGstin(data.consigneeGstin || "");
+    setConsigneeAddress(data.consigneeAddress || "");
     setDiscountRate(data.discountRate || 0);
     setIsExport(data.isExport || false);
     setCurrency(data.currency || "USD");
@@ -2012,174 +2082,56 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
-              {/* Document Settings */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card>
-                  <CardContent className="p-4">
-                    <label className="block text-xs font-semibold text-zinc-500 uppercase mb-1">Document Type</label>
-                    <select 
-                      className="w-full bg-transparent font-bold text-sm focus:outline-none disabled:opacity-50"
-                      value={docType}
-                      onChange={(e) => setDocType(e.target.value as DocumentType)}
-                    >
-                      {DOCUMENT_TYPE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
-                  </CardContent>
-                </Card>
-                <Card className={docErrors.docId ? "border-red-500" : ""}>
-                  <CardContent className="p-4">
-                    <label className="block text-xs font-semibold text-zinc-500 uppercase mb-1">
-                      {docType === DocumentType.QUOTATION ? "Quotation Number" : "Number"}
-                    </label>
-                    <input 
-                      className="w-full bg-transparent font-bold text-sm focus:outline-none disabled:opacity-50"
-                      value={docId ?? ""}
-                      onChange={(e) => setDocId(e.target.value)}
-                    />
-                    {docErrors.docId && <p className="text-[10px] text-red-500 mt-1">{docErrors.docId}</p>}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4">
-                    <label className="block text-xs font-semibold text-zinc-500 uppercase mb-1">Date</label>
-                    <input 
-                      type="date"
-                      className="w-full bg-transparent font-bold text-sm focus:outline-none disabled:opacity-50"
-                      value={date ?? ""}
-                      onChange={(e) => setDate(e.target.value)}
-                    />
-                  </CardContent>
-                </Card>
-
-                {(docType === DocumentType.TAX_INVOICE || 
-                  docType === DocumentType.DELIVERY_CHALLAN || 
-                  docType === DocumentType.PROFORMA_INVOICE) && (
-                  <>
-                    <Card>
-                      <CardContent className="p-4">
-                        <label className="block text-xs font-semibold text-zinc-500 uppercase mb-1">Transport</label>
-                        <input 
-                          className="w-full bg-transparent font-bold text-sm focus:outline-none disabled:opacity-50"
-                          value={transport ?? ""}
-                          onChange={(e) => setTransport(e.target.value)}
-                          placeholder="Vehicle No / Mode"
-                        />
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardContent className="p-4">
-                        <label className="block text-xs font-semibold text-zinc-500 uppercase mb-1">P.O Number</label>
-                        <input 
-                          className="w-full bg-transparent font-bold text-sm focus:outline-none disabled:opacity-50"
-                          value={poNumber ?? ""}
-                          onChange={(e) => setPoNumber(e.target.value)}
-                          placeholder="Customer PO No"
-                        />
-                      </CardContent>
-                    </Card>
-                  </>
-                )}
-              </div>
-
-              {/* Export Settings */}
-              <Card>
-                <CardContent className="p-4 flex flex-wrap items-center gap-6">
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="checkbox" 
-                      id="is-export"
-                      checked={isExport}
-                      onChange={(e) => setIsExport(e.target.checked)}
-                      className="w-4 h-4 accent-zinc-900 rounded border-zinc-300 focus:ring-zinc-900 disabled:opacity-50"
-                    />
-                    <label htmlFor="is-export" className={`text-sm font-bold text-zinc-900 flex items-center gap-2 cursor-pointer`}>
-                      <Package className="h-4 w-4 text-zinc-400" />
-                      Export Document
-                    </label>
-                    {!isExport && (
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={async () => {
-                          const rate = await fetchExchangeRate();
-                          setIsExport(true);
-                          convertRatesToForeign(rate);
-                        }}
-                        className="text-[10px] font-black uppercase tracking-widest text-brand-600 hover:bg-brand-50 h-7 px-2"
-                      >
-                        Quick Convert to {currency}
-                      </Button>
-                    )}
-                  </div>
-                  
-                  {isExport && (
-                    <motion.div 
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="flex flex-wrap items-center gap-6"
-                    >
-                      <div className="flex items-center gap-2">
-                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Currency</label>
-                        <select 
-                          value={currency}
-                          onChange={(e) => setCurrency(e.target.value)}
-                          className="bg-zinc-100 px-3 py-1.5 rounded-lg text-sm font-bold focus:outline-none border border-zinc-200 disabled:opacity-50"
-                        >
-                          <option value="USD">USD ($)</option>
-                          <option value="EUR">EUR (€)</option>
-                          <option value="GBP">GBP (£)</option>
-                          <option value="AED">AED (د.إ)</option>
-                          <option value="SAR">SAR (ر.س)</option>
-                          <option value="JPY">JPY (¥)</option>
-                          <option value="AUD">AUD ($)</option>
-                          <option value="CAD">CAD ($)</option>
-                          <option value="SGD">SGD ($)</option>
-                        </select>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Exchange Rate (1 {currency} = )</label>
-                        <div className="flex items-center bg-zinc-100 rounded-lg border border-zinc-200 overflow-hidden">
-                          <input 
-                            type="number"
-                            step="0.000001"
-                            value={exchangeRate ?? ""}
-                            onWheel={(e) => e.currentTarget.blur()}
-                            onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
-                            className="w-28 px-3 py-1.5 bg-transparent text-sm font-bold focus:outline-none disabled:opacity-50"
-                          />
-                          <span className="px-2 text-[10px] font-bold text-zinc-400 uppercase">INR</span>
-                          <button 
-                            onClick={fetchExchangeRate}
-                            className="px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 transition-colors text-zinc-600 disabled:opacity-50"
-                            title="Fetch Live Rate"
-                          >
-                            <Zap className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          onClick={() => convertRatesToForeign()}
-                          className="text-[10px] font-black uppercase tracking-widest text-brand-600 hover:bg-brand-50"
-                        >
-                          Convert INR → {currency}
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          onClick={() => convertRatesToINR()}
-                          className="text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:bg-zinc-50"
-                        >
-                          Convert {currency} → INR
-                        </Button>
-                      </div>
-                    </motion.div>
-                  )}
-                </CardContent>
-              </Card>
+              {/* Document & Reference Details */}
+              <DocumentReferenceDetails
+                docType={docType}
+                setDocType={setDocType}
+                docId={docId}
+                setDocId={setDocId}
+                date={date}
+                setDate={setDate}
+                isExport={isExport}
+                setIsExport={setIsExport}
+                applyTax={applyTax}
+                setApplyTax={setApplyTax}
+                applyIgst={applyIgst}
+                setApplyIgst={setApplyIgst}
+                modeOfPayment={modeOfPayment}
+                setModeOfPayment={setModeOfPayment}
+                poNumber={poNumber}
+                setPoNumber={setPoNumber}
+                poDate={poDate}
+                setPoDate={setPoDate}
+                validUntilDate={validUntilDate}
+                setValidUntilDate={setValidUntilDate}
+                paymentTermsDays={paymentTermsDays}
+                setPaymentTermsDays={setPaymentTermsDays}
+                paymentTermsUnit={paymentTermsUnit}
+                setPaymentTermsUnit={setPaymentTermsUnit}
+                paymentTermsCustom={paymentTermsCustom}
+                setPaymentTermsCustom={setPaymentTermsCustom}
+                calculatedDueDate={calculatedDueDate}
+                despatchedThrough={despatchedThrough}
+                setDespatchedThrough={setDespatchedThrough}
+                destination={destination}
+                setDestination={setDestination}
+                noOfPackages={noOfPackages}
+                setNoOfPackages={setNoOfPackages}
+                dispatchRef={dispatchRef}
+                setDispatchRef={setDispatchRef}
+                transportationReason={transportationReason}
+                setTransportationReason={setTransportationReason}
+                showChallanPrices={showChallanPrices}
+                setShowChallanPrices={setShowChallanPrices}
+                advancePercentage={advancePercentage}
+                setAdvancePercentage={setAdvancePercentage}
+                consigneeName={consigneeName}
+                setConsigneeName={setConsigneeName}
+                consigneeGstin={consigneeGstin}
+                setConsigneeGstin={setConsigneeGstin}
+                consigneeAddress={consigneeAddress}
+                setConsigneeAddress={setConsigneeAddress}
+              />
 
               {/* Customer/Supplier Details */}
               <Card>

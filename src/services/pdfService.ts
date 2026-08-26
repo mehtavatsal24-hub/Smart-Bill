@@ -85,15 +85,39 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
     },
 
     party_details: (y) => {
-      const { customer, type, id, date, transport, poNumber } = data;
+      const { 
+        customer, 
+        type, 
+        id, 
+        date, 
+        transport, 
+        poNumber,
+        poDate,
+        validUntilDate,
+        modeOfPayment,
+        paymentTermsDays,
+        paymentTermsUnit,
+        paymentTermsCustom,
+        despatchedThrough,
+        destination,
+        noOfPackages,
+        dispatchRef,
+        transportationReason,
+        advancePercentage,
+        consigneeName,
+        consigneeGstin,
+        consigneeAddress
+      } = data;
       const isPackingList = type === DocumentType.PACKING_LIST;
 
       if (isPackingList) {
         const packingRows = [
           ["CLIENT", customer.name],
           ["MANUFACTURER", business.name],
-          ["P O NO & DATE", `${poNumber || "-"} DT-${format(new Date(date), "dd-MM-yyyy")}`]
-        ];
+          ["P O NO & DATE", `${poNumber || "-"} ${poDate ? `DT-${format(new Date(poDate), "dd-MM-yyyy")}` : `DT-${format(new Date(date), "dd-MM-yyyy")}`}`],
+          consigneeName ? ["CONSIGNEE", consigneeName] : null,
+          consigneeAddress ? ["DESTINATION", consigneeAddress] : null,
+        ].filter(Boolean) as string[][];
 
         autoTable(doc, {
           startY: y,
@@ -108,22 +132,29 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       }
 
       const customerRows = [
-        ["Customer:", customer.name],
+        ["Billed To:", customer.name],
         ["Address:", customer.address],
         customer.gstin ? ["GSTIN:", customer.gstin] : null,
         customer.email ? ["Email:", customer.email] : null,
         customer.contactPerson ? ["Contact:", customer.contactPerson] : null
       ].filter(Boolean) as string[][];
 
+      if (consigneeName || consigneeAddress) {
+        customerRows.push(["", ""]);
+        customerRows.push(["Ship To (Consignee):", consigneeName || "-"]);
+        if (consigneeAddress) customerRows.push(["Consignee Addr:", consigneeAddress]);
+        if (consigneeGstin) customerRows.push(["Consignee GST:", consigneeGstin]);
+      }
+
       autoTable(doc, {
         startY: y,
         body: customerRows,
         theme: 'plain',
-        styles: { fontSize: 9, cellPadding: { top: 1.2, bottom: 1.2, left: 0, right: 0 }, textColor: [0, 0, 0], font: "helvetica" },
-        columnStyles: { 0: { cellWidth: 20, fontStyle: 'bold' }, 1: { cellWidth: 75 } },
+        styles: { fontSize: 8.5, cellPadding: { top: 1, bottom: 1, left: 0, right: 0 }, textColor: [0, 0, 0], font: "helvetica" },
+        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold' }, 1: { cellWidth: 63 } },
         margin: { left: 15, top: headerHeight },
         didDrawCell: (data) => {
-          if (data.section === 'body') {
+          if (data.section === 'body' && data.cell.text[0] !== "") {
             doc.setDrawColor(220, 220, 220);
             doc.setLineWidth(0.1);
             doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height);
@@ -133,18 +164,29 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
       const customerEndY = (doc as any).lastAutoTable.finalY;
 
+      const paymentTermsText = paymentTermsCustom || (paymentTermsDays ? `${paymentTermsDays} ${paymentTermsUnit || "Days"}` : "");
+
       const docRows = [
         [type === DocumentType.QUOTATION ? "Quotation No:" : "Document No:", id],
         ["Date:", format(new Date(date), "dd/MM/yyyy")],
-        transport ? ["Transport:", transport] : null,
-        poNumber ? ["P.O Number:", poNumber] : null
+        validUntilDate ? ["Valid Until:", format(new Date(validUntilDate), "dd/MM/yyyy")] : null,
+        poNumber ? ["P.O. Ref No:", poNumber] : null,
+        poDate ? ["P.O. Date:", format(new Date(poDate), "dd/MM/yyyy")] : null,
+        modeOfPayment ? ["Payment Mode:", modeOfPayment] : null,
+        paymentTermsText ? ["Payment Terms:", paymentTermsText] : null,
+        advancePercentage ? ["Advance (%):", `${advancePercentage}%`] : null,
+        despatchedThrough || transport ? ["Despatched Via:", despatchedThrough || transport || "-"] : null,
+        destination ? ["Destination:", destination] : null,
+        noOfPackages ? ["Packages:", noOfPackages] : null,
+        dispatchRef ? ["Dispatch Ref:", dispatchRef] : null,
+        transportationReason ? ["Reason:", transportationReason] : null,
       ].filter(Boolean) as string[][];
 
       autoTable(doc, {
         startY: y,
         body: docRows,
         theme: 'plain',
-        styles: { fontSize: 9, cellPadding: { top: 1.2, bottom: 1.2, left: 0, right: 0 }, textColor: [0, 0, 0], font: "helvetica" },
+        styles: { fontSize: 8.5, cellPadding: { top: 1, bottom: 1, left: 0, right: 0 }, textColor: [0, 0, 0], font: "helvetica" },
         columnStyles: { 0: { cellWidth: 35, fontStyle: 'bold' }, 1: { cellWidth: 'auto' } },
         margin: { left: 115, top: headerHeight },
         didDrawCell: (data) => {
@@ -156,12 +198,13 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         }
       });
 
-      return Math.max(customerEndY, (doc as any).lastAutoTable.finalY) + 10;
+      return Math.max(customerEndY, (doc as any).lastAutoTable.finalY) + 8;
     },
 
     items_table: (y) => {
-      const { items, isExport, currency = "INR", type } = data;
+      const { items, isExport, currency = "INR", type, showChallanPrices = true } = data;
       const isPackingList = type === DocumentType.PACKING_LIST;
+      const hidePrices = type === DocumentType.DELIVERY_CHALLAN && showChallanPrices === false;
 
       if (isPackingList) {
         const tableData = items.map((item, index) => [
@@ -213,36 +256,53 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       }
 
       const currencySymbol = currency === "INR" ? "Rs." : (CURRENCY_SYMBOLS[currency] || currency);
-      const tableData = items.map((item, index) => [
-        index + 1,
-        item.description,
-        item.hsn,
-        item.isRegret ? "-" : `${item.quantity} ${item.unit || "NOS"}`,
-        item.isRegret ? "REGRET" : `${isExport ? currencySymbol : "Rs."} ${item.rate.toLocaleString(isExport ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        item.isRegret ? "REGRET" : `${isExport ? currencySymbol : "Rs."} ${(item.quantity * item.rate).toLocaleString(isExport ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      ]);
+      
+      const tableData = hidePrices 
+        ? items.map((item, index) => [
+            index + 1,
+            item.description,
+            item.hsn,
+            `${item.quantity} ${item.unit || "NOS"}`,
+          ])
+        : items.map((item, index) => [
+            index + 1,
+            item.description,
+            item.hsn,
+            item.isRegret ? "-" : `${item.quantity} ${item.unit || "NOS"}`,
+            item.isRegret ? "REGRET" : `${isExport ? currencySymbol : "Rs."} ${item.rate.toLocaleString(isExport ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            item.isRegret ? "REGRET" : `${isExport ? currencySymbol : "Rs."} ${(item.quantity * item.rate).toLocaleString(isExport ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          ]);
 
       autoTable(doc, {
         startY: y,
-        head: [["#", "Description", "HSN", "Qty", `Rate (${currencySymbol})`, `Amount (${currencySymbol})`]],
-        body: tableData,
+        head: hidePrices 
+          ? [["#", "Description", "HSN", "Qty"]]
+          : [["#", "Description", "HSN", "Qty", `Rate (${currencySymbol})`, `Amount (${currencySymbol})`]],
         theme: layoutSettings.template === "minimal" ? "plain" : "striped",
+        body: tableData,
         headStyles: { 
           fillColor: layoutSettings.template === "modern" ? [63, 63, 70] : [30, 30, 30],
           textColor: [255, 255, 255],
           fontSize: 8.5,
           fontStyle: 'bold'
         },
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 10 },
-          1: { cellWidth: 'auto' },
-          2: { halign: 'center', cellWidth: 15 },
-          3: { halign: 'center', cellWidth: 22 },
-          4: { halign: 'right', cellWidth: 38 },
-          5: { halign: 'right', cellWidth: 42 },
-        },
+        columnStyles: hidePrices 
+          ? {
+              0: { halign: 'center', cellWidth: 15 },
+              1: { cellWidth: 'auto' },
+              2: { halign: 'center', cellWidth: 30 },
+              3: { halign: 'center', cellWidth: 40 },
+            }
+          : {
+              0: { halign: 'center', cellWidth: 10 },
+              1: { cellWidth: 'auto' },
+              2: { halign: 'center', cellWidth: 15 },
+              3: { halign: 'center', cellWidth: 22 },
+              4: { halign: 'right', cellWidth: 38 },
+              5: { halign: 'right', cellWidth: 42 },
+            },
         didParseCell: (data) => {
-          if (data.section === 'head') {
+          if (data.section === 'head' && !hidePrices) {
             if (data.column.index === 4 || data.column.index === 5) data.cell.styles.halign = 'right';
             else if (data.column.index === 0 || data.column.index === 2 || data.column.index === 3) data.cell.styles.halign = 'center';
           }
@@ -265,12 +325,25 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
     },
 
     totals: (y) => {
-      const { items, discount = 0, discountRate = 0, isExport, currency = "INR", type, customer } = data;
+      const { 
+        items, 
+        discount = 0, 
+        discountRate = 0, 
+        isExport, 
+        currency = "INR", 
+        type, 
+        customer, 
+        applyTax = true, 
+        applyIgst = false, 
+        showChallanPrices = true 
+      } = data;
+      
       if (type === DocumentType.PACKING_LIST) return y;
+      if (type === DocumentType.DELIVERY_CHALLAN && showChallanPrices === false) return y;
       
       const subtotal = Math.round(items.reduce((acc, item) => acc + (item.isRegret ? 0 : item.quantity * item.rate), 0) * 100) / 100;
       const isQuotation = type === DocumentType.QUOTATION;
-      const totalTax = isQuotation ? 0 : Math.round(items.reduce((acc, item) => acc + (item.isRegret ? 0 : (item.quantity * item.rate * item.taxRate) / 100), 0) * 100) / 100;
+      const totalTax = (isQuotation || !applyTax) ? 0 : Math.round(items.reduce((acc, item) => acc + (item.isRegret ? 0 : (item.quantity * item.rate * item.taxRate) / 100), 0) * 100) / 100;
       const grandTotal = Math.max(0, Math.round((subtotal + totalTax - discount) * 100) / 100);
       const currencySymbol = currency === "INR" ? "Rs." : (CURRENCY_SYMBOLS[currency] || currency);
 
@@ -283,7 +356,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       const custStateCode = customer.gstin?.substring(0, 2);
       const isValidBizState = bizStateCode && /^\d{2}$/.test(bizStateCode);
       const isValidCustState = custStateCode && /^\d{2}$/.test(custStateCode);
-      const isInterState = !!(isValidBizState && isValidCustState && bizStateCode !== custStateCode) || isExport;
+      const isInterState = applyIgst || !!(isValidBizState && isValidCustState && bizStateCode !== custStateCode) || isExport;
 
       const hasDiscount = discount > 0;
       let boxHeight = 12;
