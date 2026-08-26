@@ -5,6 +5,38 @@ import mammoth from "mammoth";
 
 let aiInstance: GoogleGenAI | null = null;
 
+export function formatGeminiError(error: any): string {
+  if (!error) return "An unknown error occurred.";
+  const rawMessage = typeof error === "string" ? error : (error.message || JSON.stringify(error));
+
+  try {
+    const parsed = JSON.parse(rawMessage);
+    if (parsed?.error) {
+      const code = parsed.error.code;
+      const msg = parsed.error.message || "";
+      if (code === 403 || msg.includes("403") || msg.includes("blocked") || msg.includes("disabled")) {
+        return "Gemini API Access Error (403): The API Key being used does not have the Generative Language API enabled. Please get a free Gemini API key from https://aistudio.google.com/app/apikey and set VITE_GEMINI_API_KEY in your .env file.";
+      }
+      if (code === 400 || msg.includes("API key not valid")) {
+        return "Invalid Gemini API Key. Please check your VITE_GEMINI_API_KEY in your .env file or get a valid key at https://aistudio.google.com/app/apikey.";
+      }
+      return `Gemini API Error (${code}): ${msg}`;
+    }
+  } catch (e) {
+    // String is not JSON
+  }
+
+  if (rawMessage.includes("403") || rawMessage.includes("generativelanguage.googleapis.com") || rawMessage.includes("blocked")) {
+    return "Gemini API Access Error (403): The API Key being used does not have the Generative Language API enabled. Please get a free Gemini API key from https://aistudio.google.com/app/apikey and set VITE_GEMINI_API_KEY in your .env file.";
+  }
+
+  if (rawMessage.includes("GEMINI_API_KEY is not defined")) {
+    return "GEMINI_API_KEY is missing. Please set VITE_GEMINI_API_KEY in your .env file.";
+  }
+
+  return rawMessage;
+}
+
 function getAI() {
   if (!aiInstance) {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;

@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { Camera, FileText, Loader2, X, Upload } from "lucide-react";
 import { Button } from "./Button";
-import { analyzeDocument } from "../services/geminiService";
+import { analyzeDocument, formatGeminiError } from "../services/geminiService";
 import { AIDocumentAnalysis, DocumentHistoryItem } from "../types";
 
 interface DocumentUploadProps {
@@ -49,7 +49,7 @@ export const DocumentUpload = ({ onAnalysisComplete, onError, industry, history,
     } catch (error: any) {
       console.error("Upload error:", error);
       if (onError) {
-        onError(error?.message || "Failed to process document. Please try again.");
+        onError(formatGeminiError(error));
       }
     } finally {
       setIsProcessing(false);
