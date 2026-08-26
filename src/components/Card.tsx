@@ -9,7 +9,7 @@ function cn(...inputs: ClassValue[]) {
 export const Card = ({ children, className, onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => {
   return (
     <div 
-      className={cn("bg-white border border-zinc-200 rounded-3xl shadow-xl shadow-zinc-200/40 overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-zinc-300/50", className)}
+      className={cn("bg-white border border-zinc-200 rounded-3xl shadow-xl shadow-zinc-200/40 transition-all duration-300 hover:shadow-2xl hover:shadow-zinc-300/50", className)}
       onClick={onClick}
     >
       {children}

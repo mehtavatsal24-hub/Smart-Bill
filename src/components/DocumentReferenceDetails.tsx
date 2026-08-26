@@ -134,7 +134,7 @@ export const DocumentReferenceDetails: React.FC<DocumentReferenceDetailsProps> =
   const isPackingList = docType === DocumentType.PACKING_LIST;
 
   return (
-    <Card className="border-zinc-200 shadow-sm overflow-hidden">
+    <Card className="border-zinc-200 shadow-sm overflow-visible">
       <CardHeader 
         title="Document & Reference Details" 
         subtitle="Configure document type, export status, number, dates, and references"
