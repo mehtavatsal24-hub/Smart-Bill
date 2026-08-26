@@ -1884,6 +1884,8 @@ export default function App() {
                 onDeleteDocument={deleteDocument}
                 onClearHistory={clearHistory}
                 onViewAll={() => setStep("history")}
+                onExportSummaryCSV={exportSummaryCSV}
+                onExportItemsCSV={exportItemsCSV}
               />
             </motion.div>
           ) : step === "history" ? (

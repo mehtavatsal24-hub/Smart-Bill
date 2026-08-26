@@ -89,6 +89,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         type, 
         id, 
         date, 
+        dueDate,
         transport, 
         poNumber,
         poDate,
@@ -112,102 +113,177 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         finalDestination,
         buyerClientDetails
       } = data;
-      const isPackingList = type === DocumentType.PACKING_LIST;
 
-      if (isPackingList) {
-        const packingRows = [
-          ["CLIENT / BUYER", customer.name],
-          buyerClientDetails ? ["BUYER DETAILS", buyerClientDetails] : null,
-          ["MANUFACTURER", business.name],
-          ["P O NO & DATE", `${poNumber || "-"} ${poDate ? `DT-${format(new Date(poDate), "dd-MM-yyyy")}` : `DT-${format(new Date(date), "dd-MM-yyyy")}`}`],
-          preCarriageBy ? ["DISPATCH MODE", preCarriageBy] : null,
-          placeOfReceipt ? ["PLACE OF RECEIPT", placeOfReceipt] : null,
-          vehicleNo ? ["VEHICLE NO", vehicleNo] : null,
-          finalDestination || destination ? ["FINAL DESTINATION", finalDestination || destination] : null,
-          consigneeName ? ["CONSIGNEE", consigneeName] : null,
-          consigneeAddress ? ["CONSIGNEE ADDR", consigneeAddress] : null,
-        ].filter(Boolean) as string[][];
+      const pageWidth = doc.internal.pageSize.width;
+      const leftMargin = 15;
+      const rightMargin = 15;
+      const totalWidth = pageWidth - leftMargin - rightMargin; // 180mm
+      const leftColWidth = 95;
+      const rightColWidth = totalWidth - leftColWidth; // 85mm
 
-        autoTable(doc, {
-          startY: y,
-          body: packingRows,
-          theme: 'grid',
-          styles: { fontSize: 9, cellPadding: 3, textColor: [0, 0, 0], font: "helvetica" },
-          columnStyles: { 0: { cellWidth: 45, fontStyle: 'bold', fillColor: [240, 240, 240] }, 1: { cellWidth: 'auto' } },
-          margin: { left: 15, right: 15, top: headerHeight },
-        });
-
-        return (doc as any).lastAutoTable.finalY + 10;
-      }
-
-      const customerRows = [
-        ["Billed To:", customer.name],
-        ["Address:", customer.address],
-        customer.gstin ? ["GSTIN:", customer.gstin] : null,
-        customer.email ? ["Email:", customer.email] : null,
-        customer.contactPerson ? ["Contact:", customer.contactPerson] : null
-      ].filter(Boolean) as string[][];
-
-      if (consigneeName || consigneeAddress) {
-        customerRows.push(["", ""]);
-        customerRows.push(["Ship To (Consignee):", consigneeName || "-"]);
-        if (consigneeAddress) customerRows.push(["Consignee Addr:", consigneeAddress]);
-        if (consigneeGstin) customerRows.push(["Consignee GST:", consigneeGstin]);
-      }
-
+      // 1. Draw Title Header Bar (Matching Image 3)
       autoTable(doc, {
         startY: y,
-        body: customerRows,
-        theme: 'plain',
-        styles: { fontSize: 8.5, cellPadding: { top: 1, bottom: 1, left: 0, right: 0 }, textColor: [0, 0, 0], font: "helvetica" },
-        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold' }, 1: { cellWidth: 63 } },
-        margin: { left: 15, top: headerHeight },
-        didDrawCell: (data) => {
-          if (data.section === 'body' && data.cell.text[0] !== "") {
-            doc.setDrawColor(220, 220, 220);
-            doc.setLineWidth(0.1);
-            doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height);
-          }
-        }
+        head: [[type.toUpperCase()]],
+        theme: 'grid',
+        headStyles: {
+          fillColor: [242, 245, 250],
+          textColor: [30, 30, 30],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center',
+          cellPadding: 3,
+          lineWidth: 0.2,
+          lineColor: [180, 185, 195],
+        },
+        margin: { left: leftMargin, right: rightMargin, top: headerHeight },
       });
 
-      const customerEndY = (doc as any).lastAutoTable.finalY;
+      const blockStartY = (doc as any).lastAutoTable.finalY;
+
+      // Prepare Vendor Details Text Block
+      const vendorText = [
+        `M/S - ${business.name}`,
+        business.address ? `Address - ${business.address}` : null,
+        business.email ? `E-Mail - ${business.email}` : null,
+        business.phone ? `Phone - ${business.phone}` : null,
+        business.gstin ? `GSTIN - ${business.gstin}` : null,
+      ].filter(Boolean).join("\n");
+
+      // Prepare Buyer & Consignee Details Text Block
+      const buyerText = [
+        `Billed To (Buyer) - ${customer.name}`,
+        customer.address ? `Buyer Addr - ${customer.address}` : null,
+        customer.gstin ? `Buyer GSTIN - ${customer.gstin}` : null,
+        customer.contactPerson ? `Contact Person - ${customer.contactPerson}` : null,
+        consigneeName ? `Shipped To (Consignee) - ${consigneeName}` : null,
+        consigneeAddress ? `Ship Addr - ${consigneeAddress}` : null,
+        consigneeGstin ? `Consignee GSTIN - ${consigneeGstin}` : null,
+        buyerClientDetails ? `Buyer Details - ${buyerClientDetails}` : null,
+      ].filter(Boolean).join("\n");
+
+      // 2. Render Left Column Table
+      autoTable(doc, {
+        startY: blockStartY,
+        body: [
+          ["VENDOR DETAILS"],
+          [vendorText],
+          ["BUYER & CONSIGNEE DETAILS"],
+          [buyerText]
+        ],
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 2.5,
+          textColor: [20, 20, 20],
+          font: "helvetica",
+          lineWidth: 0.2,
+          lineColor: [180, 185, 195]
+        },
+        didParseCell: (data) => {
+          if (data.row.index === 0 || data.row.index === 2) {
+            data.cell.styles.fillColor = [245, 247, 250];
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.textColor = [40, 40, 40];
+            data.cell.styles.fontSize = 8;
+          }
+        },
+        margin: { left: leftMargin, right: pageWidth - leftMargin - leftColWidth, top: headerHeight },
+      });
+
+      const leftFinalY = (doc as any).lastAutoTable.finalY;
+
+      // 3. Build Right Column Grid Rows Dynamically
+      const docLabel = type === DocumentType.QUOTATION 
+        ? "Quotation No." 
+        : (type === DocumentType.PURCHASE_ORDER 
+          ? "PO No." 
+          : (type === DocumentType.PACKING_LIST 
+            ? "Packing List No." 
+            : "Invoice No."));
+            
+      const dateFormatted = date ? format(new Date(date), "dd-MM-yyyy") : "-";
+
+      const rightGridRows: string[][] = [
+        [`${docLabel}: ${id}`, `Dated: ${dateFormatted}`]
+      ];
+
+      if (poNumber || poDate) {
+        rightGridRows.push([
+          `Order No.: ${poNumber || "-"}`,
+          `Order Date: ${poDate ? format(new Date(poDate), "dd-MM-yyyy") : "-"}`
+        ]);
+      }
+
+      if (modeOfPayment || dispatchRef) {
+        rightGridRows.push([
+          `Delivery Ref: ${dispatchRef || "-"}`,
+          `Mode of Payment: ${modeOfPayment || "-"}`
+        ]);
+      }
 
       const paymentTermsText = paymentTermsCustom || (paymentTermsDays ? `${paymentTermsDays} ${paymentTermsUnit || "Days"}` : "");
+      if (paymentTermsText || dueDate || validUntilDate) {
+        rightGridRows.push([
+          `Payment Terms: ${paymentTermsText || "-"}`,
+          type === DocumentType.QUOTATION 
+            ? `Valid Until: ${validUntilDate ? format(new Date(validUntilDate), "dd-MM-yyyy") : "-"}` 
+            : `Terms / Due Date: ${dueDate || "-"}`
+        ]);
+      }
 
-      const docRows = [
-        [type === DocumentType.QUOTATION ? "Quotation No:" : "Document No:", id],
-        ["Date:", format(new Date(date), "dd/MM/yyyy")],
-        validUntilDate ? ["Valid Until:", format(new Date(validUntilDate), "dd/MM/yyyy")] : null,
-        poNumber ? ["P.O. Ref No:", poNumber] : null,
-        poDate ? ["P.O. Date:", format(new Date(poDate), "dd/MM/yyyy")] : null,
-        modeOfPayment ? ["Payment Mode:", modeOfPayment] : null,
-        paymentTermsText ? ["Payment Terms:", paymentTermsText] : null,
-        advancePercentage ? ["Advance (%):", `${advancePercentage}%`] : null,
-        despatchedThrough || transport || vehicleNo ? ["Despatched Via:", despatchedThrough || transport || vehicleNo || "-"] : null,
-        destination || finalDestination ? ["Destination:", destination || finalDestination || "-"] : null,
-        noOfPackages ? ["Packages:", noOfPackages] : null,
-        dispatchRef ? ["Dispatch Ref:", dispatchRef] : null,
-        transportationReason ? ["Reason:", transportationReason] : null,
-      ].filter(Boolean) as string[][];
+      const dispatchViaText = despatchedThrough || transport || vehicleNo;
+      const destText = destination || finalDestination;
+      if (dispatchViaText || destText) {
+        rightGridRows.push([
+          `Dispatch Via: ${dispatchViaText || "-"}`,
+          `Destination: ${destText || "-"}`
+        ]);
+      }
 
+      if (preCarriageBy || placeOfReceipt) {
+        rightGridRows.push([
+          `Dispatch Mode: ${preCarriageBy || "-"}`,
+          `Place of Receipt: ${placeOfReceipt || "-"}`
+        ]);
+      }
+
+      if (noOfPackages || transportationReason) {
+        rightGridRows.push([
+          `No. of Packages: ${noOfPackages || "-"}`,
+          `Reason: ${transportationReason || "-"}`
+        ]);
+      }
+
+      // 4. Render Right Column Table
       autoTable(doc, {
-        startY: y,
-        body: docRows,
-        theme: 'plain',
-        styles: { fontSize: 8.5, cellPadding: { top: 1, bottom: 1, left: 0, right: 0 }, textColor: [0, 0, 0], font: "helvetica" },
-        columnStyles: { 0: { cellWidth: 35, fontStyle: 'bold' }, 1: { cellWidth: 'auto' } },
-        margin: { left: 115, top: headerHeight },
-        didDrawCell: (data) => {
-          if (data.section === 'body') {
-            doc.setDrawColor(220, 220, 220);
-            doc.setLineWidth(0.1);
-            doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height);
-          }
-        }
+        startY: blockStartY,
+        body: rightGridRows,
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+          textColor: [20, 20, 20],
+          font: "helvetica",
+          lineWidth: 0.2,
+          lineColor: [180, 185, 195]
+        },
+        columnStyles: {
+          0: { cellWidth: rightColWidth / 2 },
+          1: { cellWidth: rightColWidth / 2 }
+        },
+        margin: { left: leftMargin + leftColWidth, right: rightMargin, top: headerHeight },
       });
 
-      return Math.max(customerEndY, (doc as any).lastAutoTable.finalY) + 8;
+      const rightFinalY = (doc as any).lastAutoTable.finalY;
+      const finalSectionY = Math.max(leftFinalY, rightFinalY);
+
+      // Draw Outer frame box to perfectly unify the grid section
+      doc.setDrawColor(180, 185, 195);
+      doc.setLineWidth(0.3);
+      doc.rect(leftMargin, blockStartY, totalWidth, finalSectionY - blockStartY);
+
+      return finalSectionY + 8;
     },
 
     items_table: (y) => {

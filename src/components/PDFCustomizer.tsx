@@ -104,40 +104,6 @@ export const PDFCustomizer: React.FC<PDFCustomizerProps> = ({ settings, onChange
             Adjust these if your letterhead header or footer is being overlapped by content.
           </p>
         </div>
-
-        <div className="space-y-3">
-          <label className="text-sm font-medium text-zinc-700 block mb-2">
-            Arrange Sections (Drag/Order)
-          </label>
-          <div className="space-y-2">
-            {settings.sectionOrder.map((section, index) => (
-              <div
-                key={section}
-                className="flex items-center justify-between p-3 bg-zinc-50 rounded-lg border border-zinc-200 group"
-              >
-                <span className="text-sm text-zinc-700 font-medium">
-                  {SECTION_LABELS[section]}
-                </span>
-                <div className={`flex items-center gap-1 transition-opacity opacity-0 group-hover:opacity-100`}>
-                  <button
-                    onClick={() => moveSection(index, "up")}
-                    disabled={index === 0}
-                    className="p-1 hover:bg-white rounded border border-transparent hover:border-zinc-200 disabled:opacity-30"
-                  >
-                    <MoveUp className="w-4 h-4 text-zinc-600" />
-                  </button>
-                  <button
-                    onClick={() => moveSection(index, "down")}
-                    disabled={index === settings.sectionOrder.length - 1}
-                    className="p-1 hover:bg-white rounded border border-transparent hover:border-zinc-200 disabled:opacity-30"
-                  >
-                    <MoveDown className="w-4 h-4 text-zinc-600" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
       
       <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">

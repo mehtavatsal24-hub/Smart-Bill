@@ -34,9 +34,12 @@ interface DashboardProps {
   onDeleteDocument: (timestamp: number) => void;
   onClearHistory: () => void;
   onViewAll: () => void;
+  onExportSummaryCSV?: () => void;
+  onExportItemsCSV?: () => void;
 }
 
 import { motion } from "motion/react";
+import { Download } from "lucide-react";
 
 export const Dashboard = ({ 
   history, 
@@ -50,7 +53,9 @@ export const Dashboard = ({
   onDownloadPDF, 
   onDeleteDocument, 
   onClearHistory, 
-  onViewAll
+  onViewAll,
+  onExportSummaryCSV,
+  onExportItemsCSV
 }: DashboardProps) => {
   const customerCount = useMemo(() => customers.length, [customers]);
   const supplierCount = useMemo(() => suppliers.length, [suppliers]);
@@ -120,13 +125,37 @@ export const Dashboard = ({
               title="Recent Documents" 
               subtitle="Your latest invoices and orders"
               action={
-                <div className="flex items-center gap-4">
-                  {history.length > 5 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {history.length > 0 && onExportSummaryCSV && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={onExportSummaryCSV}
+                      className="font-bold text-[11px] h-8 px-2.5"
+                      title="Export document summary CSV"
+                    >
+                      <Download className="mr-1 h-3.5 w-3.5" />
+                      Export CSV
+                    </Button>
+                  )}
+                  {history.length > 0 && onExportItemsCSV && (
+                    <Button 
+                      variant="primary" 
+                      size="sm" 
+                      onClick={onExportItemsCSV}
+                      className="font-bold text-[11px] h-8 px-2.5"
+                      title="Export all items CSV"
+                    >
+                      <Download className="mr-1 h-3.5 w-3.5" />
+                      Export Items
+                    </Button>
+                  )}
+                  {history.length > 0 && (
                     <Button 
                       variant="ghost" 
                       size="sm" 
                       onClick={onViewAll}
-                      className="text-brand-600 hover:text-brand-700 font-bold"
+                      className="text-brand-600 hover:text-brand-700 font-bold text-xs"
                     >
                       View All
                       <ArrowUpRight className="h-4 w-4 ml-1" />
@@ -137,7 +166,7 @@ export const Dashboard = ({
                       variant="ghost" 
                       size="sm" 
                       onClick={onClearHistory}
-                      className="text-zinc-400 hover:text-red-500 font-bold"
+                      className="text-zinc-400 hover:text-red-500 font-bold text-xs"
                     >
                       <Trash2 className="h-4 w-4 mr-1" />
                       Clear
