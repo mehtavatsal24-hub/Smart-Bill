@@ -985,7 +985,11 @@ export default function App() {
     if (analysis.customer) {
       setCustomer(prev => ({
         ...prev,
-        ...analysis.customer
+        ...(analysis.customer?.name?.trim() ? { name: analysis.customer.name.trim() } : {}),
+        ...(analysis.customer?.gstin?.trim() ? { gstin: analysis.customer.gstin.trim() } : {}),
+        ...(analysis.customer?.address?.trim() ? { address: analysis.customer.address.trim() } : {}),
+        ...(analysis.customer?.phone?.trim() ? { phone: analysis.customer.phone.trim() } : {}),
+        ...(analysis.customer?.email?.trim() ? { email: analysis.customer.email.trim() } : {}),
       }));
     }
 
@@ -2278,6 +2282,7 @@ export default function App() {
                       />
                       <DocumentUpload 
                         onAnalysisComplete={handleAIAnalysis} 
+                        onError={(msg) => showModal({ title: "Document Upload", message: msg, type: "warning" })}
                         industry={business.industry}
                         history={history}
                         letterhead={business.letterhead}

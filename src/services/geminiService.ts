@@ -70,9 +70,14 @@ export async function analyzeDocument(
 ): Promise<AIDocumentAnalysis> {
   try {
     const ai = getAI();
-    const mimeType = file.type;
-    let content: any;
-    
+    const rawMimeType = file.type || "";
+    const extension = (file.name || "").split('.').pop()?.toLowerCase() || "";
+
+    const isPdf = rawMimeType === "application/pdf" || rawMimeType === "application/x-pdf" || extension === "pdf";
+    const isImage = rawMimeType.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "tiff"].includes(extension);
+    const isExcel = rawMimeType.includes("spreadsheet") || rawMimeType.includes("excel") || rawMimeType === "text/csv" || ["xlsx", "xls", "csv"].includes(extension);
+    const isWord = rawMimeType.includes("word") || ["docx", "doc"].includes(extension);
+
     const contextPrompt = industry ? `The business is in the ${industry} industry. ` : "";
     const historyContext = history && history.length > 0 
       ? `Recent products sold: ${history.slice(-10).map(h => h.fullData?.items.map(i => i.description).join(", ")).join(", ")}. `
@@ -97,26 +102,32 @@ export async function analyzeDocument(
     const parts: any[] = [];
     
     if (letterhead) {
+      const letterheadMime = letterhead.split(";")[0]?.split(":")[1] || "image/jpeg";
       parts.push({
         inlineData: {
-          mimeType: "image/jpeg",
+          mimeType: letterheadMime,
           data: letterhead.split(",")[1] || letterhead,
         },
       });
       prompt = `The attached image is the user's company letterhead. Use it to understand the company's branding and context. \n\n${prompt}`;
     }
 
-    if (mimeType.startsWith("image/") || mimeType === "application/pdf") {
+    if (isImage || isPdf) {
       const base64 = await fileToBase64(file);
+      const docMimeType = isPdf 
+        ? "application/pdf" 
+        : (rawMimeType.startsWith("image/") && rawMimeType !== "image/" 
+          ? rawMimeType 
+          : `image/${extension === "jpg" ? "jpeg" : extension || "jpeg"}`);
+
       parts.push({ text: prompt });
       parts.push({
         inlineData: {
-          mimeType: mimeType === "application/pdf" ? "application/pdf" : "image/jpeg",
+          mimeType: docMimeType,
           data: base64.split(",")[1] || base64,
         },
       });
-    } else if (mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || mimeType === "application/vnd.ms-excel") {
-      // Excel
+    } else if (isExcel) {
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer);
       let excelContent = "";
@@ -128,55 +139,82 @@ export async function analyzeDocument(
       });
       
       parts.push({ text: `Excel Content (Multiple Sheets):\n${excelContent}\n\n${prompt}` });
-    } else if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-      // Word
+    } else if (isWord) {
       const arrayBuffer = await file.arrayBuffer();
-      const result = await mammoth.extractRawText({ arrayBuffer });
-      parts.push({ text: `Word Content: ${result.value}\n\n${prompt}` });
+      try {
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        parts.push({ text: `Word Content: ${result.value}\n\n${prompt}` });
+      } catch (e) {
+        const textContent = await file.text();
+        parts.push({ text: `Document Content: ${textContent}\n\n${prompt}` });
+      }
     } else {
-      throw new Error("Unsupported file type");
+      try {
+        const textContent = await file.text();
+        if (textContent && textContent.trim()) {
+          parts.push({ text: `Document Content: ${textContent}\n\n${prompt}` });
+        } else {
+          throw new Error("Unsupported file type or empty file");
+        }
+      } catch (e) {
+        throw new Error("Unsupported file type");
+      }
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: [{ parts }],
-      config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            products: {
-              type: Type.ARRAY,
-              items: {
+    const generateCall = async (modelName: string) => {
+      return await ai.models.generateContent({
+        model: modelName,
+        contents: [{ parts }],
+        config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              products: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    name: { type: Type.STRING },
+                    category: { type: Type.STRING },
+                    hsn: { type: Type.STRING },
+                    suggestedTaxRate: { type: Type.NUMBER },
+                    quantity: { type: Type.NUMBER },
+                    rate: { type: Type.NUMBER },
+                    unit: { type: Type.STRING },
+                  },
+                  required: ["name", "category", "hsn", "suggestedTaxRate"],
+                },
+              },
+              customer: {
                 type: Type.OBJECT,
                 properties: {
                   name: { type: Type.STRING },
-                  category: { type: Type.STRING },
-                  hsn: { type: Type.STRING },
-                  suggestedTaxRate: { type: Type.NUMBER },
-                  quantity: { type: Type.NUMBER },
-                  rate: { type: Type.NUMBER },
-                  unit: { type: Type.STRING },
+                  gstin: { type: Type.STRING },
+                  address: { type: Type.STRING },
+                  phone: { type: Type.STRING },
+                  email: { type: Type.STRING },
                 },
-                required: ["name", "category", "hsn", "suggestedTaxRate"],
               },
             },
-            customer: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                gstin: { type: Type.STRING },
-                address: { type: Type.STRING },
-                phone: { type: Type.STRING },
-                email: { type: Type.STRING },
-              },
-            },
+            required: ["products"],
           },
-          required: ["products"],
         },
-      },
-    });
+      });
+    };
+
+    let response;
+    try {
+      response = await generateCall("gemini-3-flash-preview");
+    } catch (err: any) {
+      if (err?.message?.includes("404") || err?.message?.includes("not found") || err?.message?.includes("model")) {
+        console.warn("Falling back from gemini-3-flash-preview to gemini-2.5-flash");
+        response = await generateCall("gemini-2.5-flash");
+      } else {
+        throw err;
+      }
+    }
 
     if (!response.text) {
       throw new Error("Empty response from AI");
@@ -197,9 +235,9 @@ export async function analyzeDocument(
     }
 
     return analysis;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error analyzing document:", error);
-    return { products: [] };
+    throw error;
   }
 }
 

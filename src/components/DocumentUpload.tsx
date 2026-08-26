@@ -6,6 +6,7 @@ import { AIDocumentAnalysis, DocumentHistoryItem } from "../types";
 
 interface DocumentUploadProps {
   onAnalysisComplete: (analysis: AIDocumentAnalysis, mergeSimilar: boolean) => void;
+  onError?: (errorMessage: string) => void;
   industry?: string;
   history?: DocumentHistoryItem[];
   letterhead?: string;
@@ -13,7 +14,7 @@ interface DocumentUploadProps {
   disabled?: boolean;
 }
 
-export const DocumentUpload = ({ onAnalysisComplete, industry, history, letterhead, businessName, disabled = false }: DocumentUploadProps) => {
+export const DocumentUpload = ({ onAnalysisComplete, onError, industry, history, letterhead, businessName, disabled = false }: DocumentUploadProps) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [mergeSimilar, setMergeSimilar] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -26,17 +27,30 @@ export const DocumentUpload = ({ onAnalysisComplete, industry, history, letterhe
     setIsProcessing(true);
     try {
       const analysis = await analyzeDocument(file, industry, history, letterhead, businessName);
-      if (analysis && (analysis.products.length > 0 || analysis.customer)) {
+      const hasProducts = Boolean(analysis?.products && analysis.products.length > 0);
+      const hasCustomer = Boolean(
+        analysis?.customer && (
+          Boolean(analysis.customer.name?.trim()) ||
+          Boolean(analysis.customer.gstin?.trim()) ||
+          Boolean(analysis.customer.address?.trim()) ||
+          Boolean(analysis.customer.phone?.trim()) ||
+          Boolean(analysis.customer.email?.trim())
+        )
+      );
+
+      if (hasProducts || hasCustomer) {
         onAnalysisComplete(analysis, mergeSimilar);
       } else {
-        // No products found, but analysis might have completed
         console.log("No products or customer found in document");
-        // We could show a small toast here if we had a toast system, 
-        // but for now we'll just log it and the user will see the loading stop.
+        if (onError) {
+          onError("No line items or customer details could be extracted from this document.");
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Upload error:", error);
-      // Show error in console, maybe add a simple alert for critical failures
+      if (onError) {
+        onError(error?.message || "Failed to process document. Please try again.");
+      }
     } finally {
       setIsProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
