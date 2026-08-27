@@ -134,7 +134,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
       const blockStartY = (doc as any).lastAutoTable.finalY;
 
-      // 2. Prepare Left Column Rows with Bold Labels & Equal Padding
+      // 2. Prepare Left Column Rows with Bold Labels & Equal Padding (NO inner horizontal lines)
       const leftRows: string[][] = [
         ["VENDOR DETAILS", ""],
         ["M/S -", business.name || "-"],
@@ -158,17 +158,15 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       autoTable(doc, {
         startY: blockStartY,
         body: leftRows,
-        theme: 'grid',
+        theme: 'plain',
         styles: {
           fontSize: 8,
-          cellPadding: 2.5,
+          cellPadding: { top: 1.8, bottom: 1.8, left: 3, right: 3 },
           textColor: [20, 20, 20],
-          font: "helvetica",
-          lineWidth: 0.2,
-          lineColor: [180, 185, 195]
+          font: "helvetica"
         },
         columnStyles: {
-          0: { cellWidth: 32, fontStyle: 'bold', textColor: [50, 50, 50] },
+          0: { cellWidth: 32, fontStyle: 'bold', textColor: [40, 40, 40] },
           1: { cellWidth: leftColWidth - 32, fontStyle: 'normal' }
         },
         didParseCell: (data) => {
@@ -177,7 +175,16 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             data.cell.styles.fontStyle = 'bold';
             data.cell.styles.textColor = [40, 40, 40];
             data.cell.styles.fontSize = 8;
+            data.cell.styles.cellPadding = { top: 3, bottom: 3, left: 3, right: 3 };
             data.cell.colSpan = 2;
+          }
+        },
+        didDrawCell: (data) => {
+          if (data.cell.raw === "VENDOR DETAILS" || data.cell.raw === "BUYER & CONSIGNEE DETAILS") {
+            doc.setDrawColor(180, 185, 195);
+            doc.setLineWidth(0.2);
+            doc.line(data.cell.x, data.cell.y, data.cell.x + leftColWidth, data.cell.y);
+            doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + leftColWidth, data.cell.y + data.cell.height);
           }
         },
         margin: { left: leftMargin, right: pageWidth - leftMargin - leftColWidth, top: headerHeight },
@@ -296,10 +303,11 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       const rightFinalY = (doc as any).lastAutoTable.finalY;
       const finalSectionY = Math.max(leftFinalY, rightFinalY);
 
-      // Outer border box matching exact height
+      // Outer border box matching exact height + vertical divider line between left and right columns
       doc.setDrawColor(180, 185, 195);
       doc.setLineWidth(0.3);
       doc.rect(leftMargin, blockStartY, totalWidth, finalSectionY - blockStartY);
+      doc.line(leftMargin + leftColWidth, blockStartY, leftMargin + leftColWidth, finalSectionY);
 
       return finalSectionY + 8;
     },
