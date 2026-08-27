@@ -3,6 +3,7 @@ import { Send, Bot, User, Loader2, X, MessageSquare, Zap } from "lucide-react";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import Markdown from "react-markdown";
 import { DocumentHistoryItem, PriceHistoryItem, SavedCustomer, SavedSupplier } from "../types";
+import { generateGeminiContent } from "../services/geminiService";
 
 interface Message {
   role: "user" | "assistant";
@@ -97,8 +98,7 @@ export const AIChat = ({ history, priceHistory, customers, suppliers, industry, 
 
       contents.push({ role: "user", parts: currentMessageParts });
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+      const response = await generateGeminiContent(ai, {
         contents: contents,
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },

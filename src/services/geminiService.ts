@@ -5,6 +5,38 @@ import mammoth from "mammoth";
 
 let aiInstance: GoogleGenAI | null = null;
 
+export const GEMINI_MODEL_FALLBACKS = [
+  "gemini-3.6-flash",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash"
+];
+
+export async function generateGeminiContent(ai: GoogleGenAI, params: { contents: any; config?: any }) {
+  let lastError: any = null;
+
+  for (const modelName of GEMINI_MODEL_FALLBACKS) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: params.contents,
+        config: params.config,
+      });
+      return response;
+    } catch (err: any) {
+      lastError = err;
+      const rawMsg = typeof err === "string" ? err : (err?.message || JSON.stringify(err));
+      // If error is 404/not found/no longer available, try next model in fallback list
+      if (rawMsg.includes("404") || rawMsg.includes("not found") || rawMsg.includes("no longer available") || rawMsg.includes("models/")) {
+        console.warn(`Gemini model ${modelName} unavailable (404), trying fallback...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
 export function formatGeminiError(error: any): string {
   if (!error) return "An unknown error occurred.";
   const rawMessage = typeof error === "string" ? error : (error.message || JSON.stringify(error));
@@ -37,7 +69,7 @@ export function formatGeminiError(error: any): string {
   return rawMessage;
 }
 
-function getAI() {
+export function getAI() {
   if (!aiInstance) {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === "undefined" || apiKey === "") {
@@ -51,8 +83,7 @@ function getAI() {
 export async function analyzeLetterhead(base64Image: string): Promise<{ headerHeight: number; footerHeight: number }> {
   try {
     const ai = getAI();
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await generateGeminiContent(ai, {
       contents: [{
         parts: [
           {
@@ -193,60 +224,45 @@ export async function analyzeDocument(
       }
     }
 
-    const generateCall = async (modelName: string) => {
-      return await ai.models.generateContent({
-        model: modelName,
-        contents: [{ parts }],
-        config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              products: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    category: { type: Type.STRING },
-                    hsn: { type: Type.STRING },
-                    suggestedTaxRate: { type: Type.NUMBER },
-                    quantity: { type: Type.NUMBER },
-                    rate: { type: Type.NUMBER },
-                    unit: { type: Type.STRING },
-                  },
-                  required: ["name", "category", "hsn", "suggestedTaxRate"],
-                },
-              },
-              customer: {
+    const response = await generateGeminiContent(ai, {
+      contents: [{ parts }],
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            products: {
+              type: Type.ARRAY,
+              items: {
                 type: Type.OBJECT,
                 properties: {
                   name: { type: Type.STRING },
-                  gstin: { type: Type.STRING },
-                  address: { type: Type.STRING },
-                  phone: { type: Type.STRING },
-                  email: { type: Type.STRING },
+                  category: { type: Type.STRING },
+                  hsn: { type: Type.STRING },
+                  suggestedTaxRate: { type: Type.NUMBER },
+                  quantity: { type: Type.NUMBER },
+                  rate: { type: Type.NUMBER },
+                  unit: { type: Type.STRING },
                 },
+                required: ["name", "category", "hsn", "suggestedTaxRate"],
               },
             },
-            required: ["products"],
+            customer: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                gstin: { type: Type.STRING },
+                address: { type: Type.STRING },
+                phone: { type: Type.STRING },
+                email: { type: Type.STRING },
+              },
+            },
           },
+          required: ["products"],
         },
-      });
-    };
-
-    let response;
-    try {
-      response = await generateCall("gemini-3-flash-preview");
-    } catch (err: any) {
-      if (err?.message?.includes("404") || err?.message?.includes("not found") || err?.message?.includes("model")) {
-        console.warn("Falling back from gemini-3-flash-preview to gemini-2.5-flash");
-        response = await generateCall("gemini-2.5-flash");
-      } else {
-        throw err;
-      }
-    }
+      },
+    });
 
     if (!response.text) {
       throw new Error("Empty response from AI");
@@ -331,8 +347,7 @@ export async function analyzeProductImage(
     });
     parts.push({ text: prompt });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await generateGeminiContent(ai, {
       contents: [{ parts }],
       config: {
         thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
@@ -422,8 +437,7 @@ export async function processVoiceInput(
     }
     parts.push({ text: prompt });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await generateGeminiContent(ai, {
       contents: [{ parts }],
       config: {
         thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
@@ -467,8 +481,7 @@ export async function generateInvoiceNotes(businessName: string, items: any[], l
     }
     parts.push({ text: prompt });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await generateGeminiContent(ai, {
       contents: [{ parts }],
     });
     return response.text.trim();
@@ -508,8 +521,7 @@ export async function getDynamicSuggestions(
     }
     parts.push({ text: prompt });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await generateGeminiContent(ai, {
       contents: [{ parts }],
       config: {
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
@@ -541,8 +553,7 @@ export async function analyzeCustomerPatterns(
       date: h.date
     }));
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await generateGeminiContent(ai, {
       contents: [{
         parts: [{
           text: `Analyze the notes and terms used for customer "${customerName}" in the following history: ${JSON.stringify(historyData)}. 
@@ -571,6 +582,3 @@ export async function analyzeCustomerPatterns(
     return null;
   }
 }
-
-
-

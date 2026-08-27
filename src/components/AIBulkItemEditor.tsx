@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Sparkles, Loader2, Zap } from "lucide-react";
 import { LineItem } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
+import { generateGeminiContent } from "../services/geminiService";
 
 interface AIBulkItemEditorProps {
   items: LineItem[];
@@ -99,8 +100,7 @@ Return a JSON array of items with schema:
 ]
 Modify existing items or generate new line items according to the instruction. Preserve existing IDs where applicable. Ensure numbers are numbers. Return only valid JSON array.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+      const response = await generateGeminiContent(ai, {
         contents: systemPrompt,
         config: {
           responseMimeType: "application/json",
