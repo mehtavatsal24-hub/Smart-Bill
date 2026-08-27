@@ -261,6 +261,18 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
   const SAFE_BOTTOM = footerHeight;
   let currentY = headerHeight;
 
+  // Helper to format all dates cleanly as dd/MM/yyyy (e.g., 27/08/2026) across all document types
+  const formatDateClean = (dStr: any) => {
+    if (!dStr || dStr === "-") return "";
+    try {
+      const parsed = new Date(dStr);
+      if (isNaN(parsed.getTime())) return dStr;
+      return format(parsed, "dd/MM/yyyy");
+    } catch (e) {
+      return dStr;
+    }
+  };
+
   // Add letterhead background if provided
   const addLetterhead = () => {
     if (hideForPreprinted) return;
@@ -396,149 +408,426 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
     // SECTION: PARTY DETAILS (Buyer, Consignee & Document Metadata)
     // -------------------------------------------------------------
     party_details: (y) => {
-      let safeDate = "-";
-      try {
-        if (data.date) safeDate = format(new Date(data.date), "dd/MM/yyyy");
-      } catch (e) {}
+      const leftMargin = 15;
+      const rightMargin = 15;
+      const totalWidth = pageWidth - leftMargin - rightMargin; // 180mm
 
-      const rawBuyerOrdDate = dataAny.buyerOrderDate || data.poDate;
-      let buyerOrdDateStr = safeDate;
-      if (rawBuyerOrdDate) {
-        try {
-          buyerOrdDateStr = format(new Date(rawBuyerOrdDate), "dd/MM/yyyy");
-        } catch (e) {}
-      }
+      // Branching: Quotation, Purchase Order, Delivery Challan use Image 2 reference layout
+      if (type !== DocumentType.TAX_INVOICE && type !== DocumentType.PROFORMA_INVOICE && type !== DocumentType.PACKING_LIST) {
+        // 1. Title Banner Bar
+        const docTitle = type === DocumentType.QUOTATION 
+          ? "QUOTATION" 
+          : (type === DocumentType.PURCHASE_ORDER 
+            ? "PURCHASE ORDER" 
+            : "DELIVERY CHALLAN");
 
-      let dueDateStr = safeDate;
-      const rawDueDate = data.validUntilDate || data.dueDate;
-      if (rawDueDate) {
-        try {
-          dueDateStr = format(new Date(rawDueDate), "dd/MM/yyyy");
-        } catch (e) {}
-      }
+        autoTable(doc, {
+          startY: y,
+          head: [[docTitle]],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [242, 245, 250],
+            textColor: [30, 30, 30],
+            fontSize: 9.5,
+            fontStyle: 'bold',
+            halign: 'center',
+            cellPadding: 3,
+            lineWidth: 0.2,
+            lineColor: [180, 185, 195],
+          },
+          margin: { left: leftMargin, right: rightMargin, top: headerHeight },
+        });
 
-      const docTitle = (
-        type === DocumentType.QUOTATION
-          ? "Quotation"
-          : type === DocumentType.TAX_INVOICE
-          ? "Tax Invoice"
-          : type.replace(/_/g, " ")
-      ).toUpperCase();
+        const topRefStartY = (doc as any).lastAutoTable.finalY;
 
-      const docNumberLabel = type === DocumentType.QUOTATION ? "Quotation No." : "Invoice No.";
-      const pTerms = dataAny.paymentTerms || data.paymentTermsCustom || (data.paymentTermsDays ? `${data.paymentTermsDays} ${data.paymentTermsUnit || "Days"}` : "");
-      const transportText = data.despatchedThrough || data.transport || dataAny.vehicleNo || "";
+        // 2. Top Document Reference Row(s)
+        const docLabel = type === DocumentType.QUOTATION 
+          ? "Quotation No." 
+          : (type === DocumentType.PURCHASE_ORDER 
+            ? "P.O. No." 
+            : "Challan No.");
 
-      const formatRightCell = (label: string, val?: string) => {
-        const cleanVal = val && val.trim() && val.trim() !== "NA" ? val.trim() : "-";
-        return [label, cleanVal].join("\n");
-      };
+        const dateLabel = type === DocumentType.QUOTATION 
+          ? "Quotation Date" 
+          : (type === DocumentType.PURCHASE_ORDER 
+            ? "P.O. Date" 
+            : "Date");
 
-      const vendorContentStr = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10";
-      const partyContentStr = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10";
+        const dateFormatted = data.date ? formatDateClean(data.date) : "";
 
-      const gridRows: any[] = [
-        [
-          {
-            content: docTitle,
-            colSpan: 4,
-            styles: { halign: "center", fontStyle: "bold", fillColor: [240, 243, 246], textColor: [15, 23, 42], minCellHeight: 8 }
+        const topRefRows: string[][] = [
+          [`${docLabel} - ${data.id}`, `${dateLabel} - ${dateFormatted}`]
+        ];
+
+        const paymentTermsText = data.paymentTermsCustom || (data.paymentTermsDays ? `${data.paymentTermsDays} ${data.paymentTermsUnit || "Days"}` : "") || dataAny.paymentTerms;
+        const dueOrValid = type === DocumentType.QUOTATION 
+          ? (data.validUntilDate ? formatDateClean(data.validUntilDate) : "") 
+          : formatDateClean(data.dueDate);
+
+        if (paymentTermsText && paymentTermsText.trim() && paymentTermsText !== "-") {
+          if (dueOrValid && dueOrValid.trim() && dueOrValid !== "-") {
+            const validLabel = type === DocumentType.QUOTATION ? "Valid Until" : "Terms / Due Date";
+            topRefRows.push([`Payment Terms - ${paymentTermsText}`, `${validLabel} - ${dueOrValid}`]);
+          } else {
+            topRefRows.push([`Payment Terms - ${paymentTermsText}`, ""]);
           }
-        ],
-        [
-          { content: vendorContentStr, colSpan: 2, rowSpan: 3, styles: { valign: "top" } },
-          { content: formatRightCell(docNumberLabel, data.id), styles: { minCellHeight: 10 } },
-          { content: formatRightCell("Dated", safeDate), styles: { minCellHeight: 10 } }
-        ],
-        [
-          { content: formatRightCell("Delivery Note / LR", dataAny.despatchDocNo || data.dispatchRef || transportText), styles: { minCellHeight: 10 } },
-          { content: formatRightCell("Payment Mode", dataAny.paymentMode || data.modeOfPayment || pTerms), styles: { minCellHeight: 10 } }
-        ],
-        [
-          { content: formatRightCell("Order No.", data.poNumber), styles: { minCellHeight: 10 } },
-          { content: formatRightCell("Order Date", buyerOrdDateStr), styles: { minCellHeight: 10 } }
-        ],
-        [
-          { content: partyContentStr, colSpan: 2, rowSpan: 2, styles: { valign: "top" } },
-          { content: formatRightCell("Payment Terms", pTerms), styles: { minCellHeight: 10 } },
-          { content: formatRightCell("Due Date", dueDateStr), styles: { minCellHeight: 10 } }
-        ],
-        [
-          { content: formatRightCell("Dispatch Via", transportText), styles: { minCellHeight: 10 } },
-          { content: formatRightCell("Destination", data.destination || dataAny.finalDestination), styles: { minCellHeight: 10 } }
-        ]
-      ];
+        } else if (dueOrValid && dueOrValid.trim() && dueOrValid !== "-") {
+          const validLabel = type === DocumentType.QUOTATION ? "Valid Until" : "Terms / Due Date";
+          topRefRows.push([`${validLabel} - ${dueOrValid}`, ""]);
+        }
 
+        autoTable(doc, {
+          startY: topRefStartY,
+          body: topRefRows,
+          theme: 'grid',
+          styles: {
+            fontSize: 7.5,
+            cellPadding: 3,
+            textColor: [30, 30, 30],
+            font: "helvetica",
+            lineWidth: 0.2,
+            lineColor: [180, 185, 195],
+            fontStyle: 'bold'
+          },
+          columnStyles: {
+            0: { cellWidth: 90 },
+            1: { cellWidth: 90 }
+          },
+          didParseCell: (dataCell) => {
+            const rawRow = dataCell.row.raw as string[];
+            if (rawRow && rawRow[1] === "" && dataCell.column.index === 0) {
+              dataCell.cell.colSpan = 2;
+            }
+          },
+          margin: { left: leftMargin, right: rightMargin, top: headerHeight }
+        });
+
+        const bottomBlockStartY = (doc as any).lastAutoTable.finalY;
+
+        // 3. Bottom 2 Equal Columns (90mm Left Vendor, 90mm Right Customer)
+        const vendorRows: string[][] = [
+          ["VENDOR DETAILS", ""],
+          ["M/S -", business.name || "-"],
+        ];
+        if (business.address) vendorRows.push(["Address -", business.address]);
+        if (business.phone) vendorRows.push(["Phone -", business.phone]);
+        if (business.email) vendorRows.push(["E-Mail -", business.email]);
+        if (business.gstin) vendorRows.push(["GSTIN/UIN -", business.gstin]);
+        if (business.country || business.state) vendorRows.push(["State -", business.state || business.country || ""]);
+
+        const customerRows: string[][] = [
+          ["CUSTOMER DETAILS", ""],
+          ["M/S -", customer.name || "-"],
+        ];
+        if (customer.address) customerRows.push(["Address -", customer.address]);
+        if (customer.phone) customerRows.push(["Phone -", customer.phone]);
+        if (customer.email) customerRows.push(["E-Mail -", customer.email]);
+        if (customer.gstin) customerRows.push(["GSTIN/UIN -", customer.gstin]);
+        customerRows.push(["Place of Supply -", "India"]);
+        if (data.consigneeName) customerRows.push(["Shipped To (Consignee) -", data.consigneeName]);
+        if (data.consigneeAddress) customerRows.push(["Ship Addr -", data.consigneeAddress]);
+
+        // Render Vendor Column (x = 15 to x = 105)
+        autoTable(doc, {
+          startY: bottomBlockStartY,
+          body: vendorRows,
+          theme: 'plain',
+          styles: {
+            fontSize: 7.5,
+            cellPadding: { top: 1.0, bottom: 1.0, left: 3, right: 3 },
+            textColor: [20, 20, 20],
+            font: "helvetica"
+          },
+          columnStyles: {
+            0: { cellWidth: 32, fontStyle: 'bold', textColor: [30, 30, 30] },
+            1: { cellWidth: 58, fontStyle: 'normal' }
+          },
+          didParseCell: (dataCell) => {
+            if (dataCell.cell.raw === "VENDOR DETAILS") {
+              dataCell.cell.styles.fillColor = [242, 245, 250];
+              dataCell.cell.styles.fontStyle = 'bold';
+              dataCell.cell.styles.textColor = [30, 30, 30];
+              dataCell.cell.styles.fontSize = 7.5;
+              dataCell.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 3, right: 3 };
+              dataCell.cell.colSpan = 2;
+            } else if (dataCell.column.index === 1 && dataCell.row.raw[0] === "M/S -") {
+              dataCell.cell.styles.fontStyle = 'bold';
+              dataCell.cell.styles.textColor = [30, 30, 30];
+            }
+          },
+          didDrawCell: (dataCell) => {
+            if (dataCell.cell.raw === "VENDOR DETAILS") {
+              doc.setDrawColor(180, 185, 195);
+              doc.setLineWidth(0.2);
+              doc.line(dataCell.cell.x, dataCell.cell.y, dataCell.cell.x + 90, dataCell.cell.y);
+              doc.line(dataCell.cell.x, dataCell.cell.y + dataCell.cell.height, dataCell.cell.x + 90, dataCell.cell.y + dataCell.cell.height);
+            }
+          },
+          margin: { left: leftMargin, right: pageWidth - leftMargin - 90, top: headerHeight }
+        });
+
+        const leftFinalY = (doc as any).lastAutoTable.finalY;
+
+        // Render Customer Column (x = 105 to x = 195)
+        autoTable(doc, {
+          startY: bottomBlockStartY,
+          body: customerRows,
+          theme: 'plain',
+          styles: {
+            fontSize: 7.5,
+            cellPadding: { top: 1.0, bottom: 1.0, left: 3, right: 3 },
+            textColor: [20, 20, 20],
+            font: "helvetica"
+          },
+          columnStyles: {
+            0: { cellWidth: 34, fontStyle: 'bold', textColor: [30, 30, 30] },
+            1: { cellWidth: 56, fontStyle: 'normal' }
+          },
+          didParseCell: (dataCell) => {
+            if (dataCell.cell.raw === "CUSTOMER DETAILS") {
+              dataCell.cell.styles.fillColor = [242, 245, 250];
+              dataCell.cell.styles.fontStyle = 'bold';
+              dataCell.cell.styles.textColor = [30, 30, 30];
+              dataCell.cell.styles.fontSize = 7.5;
+              dataCell.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 3, right: 3 };
+              dataCell.cell.colSpan = 2;
+            } else if (dataCell.column.index === 1 && (dataCell.row.raw[0] === "M/S -" || dataCell.row.raw[0] === "Shipped To (Consignee) -")) {
+              dataCell.cell.styles.fontStyle = 'bold';
+              dataCell.cell.styles.textColor = [30, 30, 30];
+            }
+          },
+          didDrawCell: (dataCell) => {
+            if (dataCell.cell.raw === "CUSTOMER DETAILS") {
+              doc.setDrawColor(180, 185, 195);
+              doc.setLineWidth(0.2);
+              doc.line(dataCell.cell.x, dataCell.cell.y, dataCell.cell.x + 90, dataCell.cell.y);
+              doc.line(dataCell.cell.x, dataCell.cell.y + dataCell.cell.height, dataCell.cell.x + 90, dataCell.cell.y + dataCell.cell.height);
+            }
+          },
+          margin: { left: leftMargin + 90, right: rightMargin, top: headerHeight }
+        });
+
+        const rightFinalY = (doc as any).lastAutoTable.finalY;
+        const finalSectionY = Math.max(leftFinalY, rightFinalY);
+
+        // Outer border box matching exact height + vertical divider line down the middle (x = 105)
+        doc.setDrawColor(180, 185, 195);
+        doc.setLineWidth(0.3);
+        doc.rect(leftMargin, topRefStartY, totalWidth, finalSectionY - topRefStartY);
+        doc.line(leftMargin + 90, bottomBlockStartY, leftMargin + 90, finalSectionY);
+
+        return finalSectionY + 8;
+      }
+
+      // --- TAX INVOICE / PROFORMA INVOICE / PACKING LIST LAYOUT ---
+      const leftColWidth = 95;
+      const rightColWidth = totalWidth - leftColWidth; // 85mm
+
+      // 1. Title Header Bar
       autoTable(doc, {
         startY: y,
-        body: gridRows,
-        theme: "grid",
-        styles: { fontSize: 7.5, cellPadding: 2.0, textColor: [15, 23, 42], font: "helvetica", lineColor: [148, 163, 184], lineWidth: 0.15 },
-        columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 45 }, 2: { cellWidth: 45 }, 3: { cellWidth: 45 } },
-        margin: { left: 15, right: 15, top: headerHeight },
-        didDrawCell: (cellData) => {
-          if (cellData.section === "body") {
-            const cell = cellData.cell;
-            const rowIndex = cellData.row.index;
-            const colIndex = cellData.column.index;
+        head: [[type.toUpperCase()]],
+        theme: 'grid',
+        headStyles: {
+          fillColor: [242, 245, 250],
+          textColor: [30, 30, 30],
+          fontSize: 9.5,
+          fontStyle: 'bold',
+          halign: 'center',
+          cellPadding: 3,
+          lineWidth: 0.2,
+          lineColor: [180, 185, 195],
+        },
+        margin: { left: leftMargin, right: rightMargin, top: headerHeight },
+      });
 
-            if (rowIndex === 0) {
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(10);
-              doc.setTextColor(15, 23, 42);
-              doc.text(docTitle, cell.x + cell.width / 2, cell.y + 5.5, { align: "center" });
-              return;
-            }
+      const blockStartY = (doc as any).lastAutoTable.finalY;
 
-            // Draw Vendor Card
-            if (rowIndex === 1 && colIndex === 0) {
-              doc.setFillColor(238, 242, 246);
-              doc.rect(cell.x + 2, cell.y + 2, cell.width - 4, 4.5, "FD");
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(8.2);
-              doc.setTextColor(15, 23, 42);
-              doc.text("SELLER / VENDOR", cell.x + 4, cell.y + 5.2);
+      // 2. Prepare Left Column Rows with Bold Labels & Bold Names (NO inner horizontal lines)
+      const leftRows: string[][] = [
+        ["VENDOR DETAILS", ""],
+        ["M/S -", business.name || "-"],
+      ];
 
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(8.5);
-              doc.text(business.name || "YOUR BUSINESS NAME", cell.x + 3, cell.y + 11);
+      if (business.address) leftRows.push(["Address -", business.address]);
+      if (business.email) leftRows.push(["E-Mail -", business.email]);
+      if (business.phone) leftRows.push(["Phone -", business.phone]);
+      if (business.gstin) leftRows.push(["GSTIN -", business.gstin]);
+      if (business.country && !business.gstin) leftRows.push(["State -", business.state || business.country]);
 
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(7.5);
-              doc.setTextColor(51, 65, 85);
-              const addr = doc.splitTextToSize(business.address || "-", 84);
-              doc.text(addr, cell.x + 3, cell.y + 15);
-              doc.text(`GSTIN: ${business.gstin || "-"}`, cell.x + 3, cell.y + 22);
-              doc.text(`Tel: ${business.phone || "-"} | ${business.email || "-"}`, cell.x + 3, cell.y + 26);
-              return;
-            }
+      leftRows.push(["BUYER & CONSIGNEE DETAILS", ""]);
+      leftRows.push(["Billed To (Buyer) -", customer.name || "-"]);
+      if (customer.address) leftRows.push(["Buyer Addr -", customer.address]);
+      if (customer.gstin) leftRows.push(["Buyer GSTIN -", customer.gstin]);
+      if (customer.contactPerson) leftRows.push(["Contact Person -", customer.contactPerson]);
+      if (data.consigneeName) leftRows.push(["Shipped To (Consignee) -", data.consigneeName]);
+      if (data.consigneeAddress) leftRows.push(["Ship Addr -", data.consigneeAddress]);
+      if (data.consigneeGstin) leftRows.push(["Consignee GSTIN -", data.consigneeGstin]);
+      if (dataAny.buyerClientDetails) leftRows.push(["Buyer Details -", dataAny.buyerClientDetails]);
 
-            // Draw Customer Card
-            if (rowIndex === 4 && colIndex === 0) {
-              doc.setFillColor(238, 242, 246);
-              doc.rect(cell.x + 2, cell.y + 2, cell.width - 4, 4.5, "FD");
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(8.2);
-              doc.setTextColor(15, 23, 42);
-              doc.text("BUYER / CLIENT", cell.x + 4, cell.y + 5.2);
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(8.5);
-              doc.text(customer.name || "-", cell.x + 3, cell.y + 11);
-
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(7.5);
-              doc.setTextColor(51, 65, 85);
-              const addr = doc.splitTextToSize(customer.address || "-", 84);
-              doc.text(addr, cell.x + 3, cell.y + 15);
-              doc.text(`GSTIN: ${customer.gstin || "-"}`, cell.x + 3, cell.y + 22);
-              doc.text(`Tel: ${customer.phone || "-"} | ${customer.email || "-"}`, cell.x + 3, cell.y + 26);
+      autoTable(doc, {
+        startY: blockStartY,
+        body: leftRows,
+        theme: 'plain',
+        styles: {
+          fontSize: 7.5,
+          cellPadding: { top: 1.0, bottom: 1.0, left: 3, right: 3 },
+          textColor: [20, 20, 20],
+          font: "helvetica"
+        },
+        columnStyles: {
+          0: { cellWidth: 34, fontStyle: 'bold', textColor: [30, 30, 30] },
+          1: { cellWidth: leftColWidth - 34, fontStyle: 'normal' }
+        },
+        didParseCell: (dataCell) => {
+          if (dataCell.cell.raw === "VENDOR DETAILS" || dataCell.cell.raw === "BUYER & CONSIGNEE DETAILS") {
+            dataCell.cell.styles.fillColor = [242, 245, 250];
+            dataCell.cell.styles.fontStyle = 'bold';
+            dataCell.cell.styles.textColor = [30, 30, 30];
+            dataCell.cell.styles.fontSize = 7.5;
+            dataCell.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 3, right: 3 };
+            dataCell.cell.colSpan = 2;
+          } else if (dataCell.column.index === 1) {
+            const label = dataCell.row.raw[0];
+            if (label === "M/S -" || label === "Billed To (Buyer) -" || label === "Shipped To (Consignee) -") {
+              dataCell.cell.styles.fontStyle = 'bold';
+              dataCell.cell.styles.textColor = [30, 30, 30];
             }
           }
+        },
+        didDrawCell: (dataCell) => {
+          if (dataCell.cell.raw === "VENDOR DETAILS" || dataCell.cell.raw === "BUYER & CONSIGNEE DETAILS") {
+            doc.setDrawColor(180, 185, 195);
+            doc.setLineWidth(0.2);
+            doc.line(dataCell.cell.x, dataCell.cell.y, dataCell.cell.x + leftColWidth, dataCell.cell.y);
+            doc.line(dataCell.cell.x, dataCell.cell.y + dataCell.cell.height, dataCell.cell.x + leftColWidth, dataCell.cell.y + dataCell.cell.height);
+          }
+        },
+        margin: { left: leftMargin, right: pageWidth - leftMargin - leftColWidth, top: headerHeight },
+      });
+
+      const leftFinalY = (doc as any).lastAutoTable.finalY;
+
+      // 3. Build Right Column Pairs (Strict Row-by-Row Filtering - ONLY Non-Empty Values!)
+      const docLabel = "Invoice No.";
+      const dateFormatted = data.date ? formatDateClean(data.date) : "";
+
+      const pairRow1: Array<{ k: string; v: string }> = [
+        { k: `${docLabel}:`, v: data.id }
+      ];
+      if (dateFormatted) pairRow1.push({ k: "Dated:", v: dateFormatted });
+
+      const pairRow2: Array<{ k: string; v: string }> = [];
+      if (data.dispatchRef && data.dispatchRef.trim() && data.dispatchRef !== "-") {
+        pairRow2.push({ k: "Delivery Note:", v: data.dispatchRef });
+      }
+      if (data.modeOfPayment && data.modeOfPayment.trim() && data.modeOfPayment !== "-") {
+        pairRow2.push({ k: "Mode of Payment:", v: data.modeOfPayment });
+      }
+
+      const pairRow3: Array<{ k: string; v: string }> = [];
+      if (data.poNumber && data.poNumber.trim() && data.poNumber !== "-") {
+        pairRow3.push({ k: "Order No.:", v: data.poNumber });
+      }
+      if (data.poDate && data.poDate.trim() && data.poDate !== "-") {
+        pairRow3.push({ k: "Order Date:", v: formatDateClean(data.poDate) });
+      }
+
+      const pairRow4: Array<{ k: string; v: string }> = [];
+      const paymentTermsText = data.paymentTermsCustom || (data.paymentTermsDays ? `${data.paymentTermsDays} ${data.paymentTermsUnit || "Days"}` : "");
+      if (paymentTermsText && paymentTermsText.trim() && paymentTermsText !== "-") {
+        pairRow4.push({ k: "Payment Terms:", v: paymentTermsText });
+      }
+
+      if (data.dueDate && data.dueDate.trim() && data.dueDate !== "-") {
+        pairRow4.push({ k: "Terms / Due Date:", v: formatDateClean(data.dueDate) });
+      }
+
+      const pairRow5: Array<{ k: string; v: string }> = [];
+      const dispatchViaText = data.despatchedThrough || data.transport || dataAny.vehicleNo;
+      if (dispatchViaText && dispatchViaText.trim() && dispatchViaText !== "-") {
+        pairRow5.push({ k: "Dispatch Via:", v: dispatchViaText });
+      }
+
+      const destText = data.destination || dataAny.finalDestination;
+      if (destText && destText.trim() && destText !== "-") {
+        pairRow5.push({ k: "Destination:", v: destText });
+      }
+
+      const pairRow6: Array<{ k: string; v: string }> = [];
+      if (data.preCarriageBy && data.preCarriageBy.trim() && data.preCarriageBy !== "-") {
+        pairRow6.push({ k: "Dispatch Mode:", v: data.preCarriageBy });
+      }
+      if (data.placeOfReceipt && data.placeOfReceipt.trim() && data.placeOfReceipt !== "-") {
+        pairRow6.push({ k: "Place of Receipt:", v: data.placeOfReceipt });
+      }
+
+      const pairRow7: Array<{ k: string; v: string }> = [];
+      if (data.noOfPackages && data.noOfPackages.trim() && data.noOfPackages !== "-") {
+        pairRow7.push({ k: "No. of Packages:", v: data.noOfPackages });
+      }
+      if (data.transportationReason && data.transportationReason.trim() && data.transportationReason !== "-" && data.transportationReason !== "Supply") {
+        pairRow7.push({ k: "Reason:", v: data.transportationReason });
+      }
+
+      const allRows: Array<Array<{ k: string; v: string }>> = [
+        pairRow1, pairRow2, pairRow3, pairRow4, pairRow5, pairRow6, pairRow7
+      ].filter(r => r.length > 0);
+
+      const rightTableBody: string[][] = allRows.map(row => {
+        if (row.length === 2) {
+          return [row[0].k, formatDateClean(row[0].v), row[1].k, formatDateClean(row[1].v)];
+        } else {
+          return [row[0].k, formatDateClean(row[0].v), "", ""];
         }
       });
 
-      return (doc as any).lastAutoTable.finalY + 4;
+      const totalLeftHeight = leftFinalY - blockStartY;
+      const numRightRows = Math.max(1, rightTableBody.length);
+      const calculatedMinHeight = totalLeftHeight / numRightRows;
+
+      const c1W = 21;
+      const c2W = (rightColWidth / 2) - c1W;
+
+      autoTable(doc, {
+        startY: blockStartY,
+        body: rightTableBody,
+        theme: 'grid',
+        styles: {
+          fontSize: 7.5,
+          minCellHeight: calculatedMinHeight,
+          valign: 'middle',
+          cellPadding: { top: 2, bottom: 2, left: 2.5, right: 2.5 },
+          textColor: [20, 20, 20],
+          font: "helvetica",
+          lineWidth: 0.2,
+          lineColor: [180, 185, 195]
+        },
+        columnStyles: {
+          0: { cellWidth: c1W, fontStyle: 'bold', textColor: [30, 30, 30] },
+          1: { cellWidth: c2W, fontStyle: 'normal' },
+          2: { cellWidth: c1W, fontStyle: 'bold', textColor: [30, 30, 30] },
+          3: { cellWidth: c2W, fontStyle: 'normal' },
+        },
+        didParseCell: (dataCell) => {
+          const rawRow = dataCell.row.raw as string[];
+          if (rawRow && rawRow[0] !== "" && rawRow[2] === "" && dataCell.column.index === 1) {
+            dataCell.cell.colSpan = 3;
+          }
+        },
+        margin: { left: leftMargin + leftColWidth, right: rightMargin, top: headerHeight },
+      });
+
+      const rightFinalY = (doc as any).lastAutoTable.finalY;
+      const finalSectionY = Math.max(leftFinalY, rightFinalY);
+
+      // Outer border box matching exact height + vertical divider line between left and right columns
+      doc.setDrawColor(180, 185, 195);
+      doc.setLineWidth(0.3);
+      doc.rect(leftMargin, blockStartY, totalWidth, finalSectionY - blockStartY);
+      doc.line(leftMargin + leftColWidth, blockStartY, leftMargin + leftColWidth, finalSectionY);
+
+      return finalSectionY + 8;
     },
 
     // -------------------------------------------------------------
@@ -546,40 +835,121 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
     // -------------------------------------------------------------
     items_table: (y) => {
       const activeSymbol = getPdfCurrencySymbol(currency);
-      const tableData = items.map((item, index) => [
-        index + 1,
-        item.description,
-        item.hsn || "-",
-        `${item.quantity} ${item.unit || "NOS"}`,
-        `${activeSymbol} ${item.rate.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        `${activeSymbol} ${(item.quantity * item.rate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-      ]);
+      const isPackingList = type === DocumentType.PACKING_LIST;
+      const isChallan = type === DocumentType.DELIVERY_CHALLAN;
+      const showChallanPrices = data.showChallanPrices !== false;
+
+      let headers: string[] = [];
+      if (isPackingList) {
+        headers = ["S.N.", "Description of Goods", "HSN/SAC", "Box No.", "Heat / Lot No.", "Qty Packed", "Total Qty", "Unit"];
+      } else if (isChallan) {
+        headers = showChallanPrices 
+          ? ["S.N.", "Description of Goods", "HSN/SAC", "Qty", "Unit", `Rate (${activeSymbol})`, `Amount (${activeSymbol})`]
+          : ["S.N.", "Description of Goods", "HSN/SAC", "Qty", "Unit"];
+      } else {
+        headers = ["S.N.", "Description of Goods", "HSN/SAC", "Qty", "Unit", `Rate (${activeSymbol})`, `Tax %`, `Amount (${activeSymbol})`];
+      }
+
+      const tableRows = items.map((item, index) => {
+        const qty = Number(item.quantity) || 0;
+        const rate = Number(item.rate) || 0;
+        const taxRate = Number(item.taxRate) || 0;
+        const amount = qty * rate;
+
+        if (isPackingList) {
+          return [
+            (index + 1).toString(),
+            item.description,
+            item.hsn || "-",
+            item.boxNo || "-",
+            item.heatNo || "-",
+            (item.qtyPacked || qty).toString(),
+            qty.toString(),
+            item.unit || "NOS",
+          ];
+        } else if (isChallan) {
+          if (showChallanPrices) {
+            return [
+              (index + 1).toString(),
+              item.description,
+              item.hsn || "-",
+              qty.toString(),
+              item.unit || "NOS",
+              rate.toFixed(2),
+              amount.toFixed(2),
+            ];
+          } else {
+            return [
+              (index + 1).toString(),
+              item.description,
+              item.hsn || "-",
+              qty.toString(),
+              item.unit || "NOS",
+            ];
+          }
+        } else {
+          return [
+            (index + 1).toString(),
+            item.description,
+            item.hsn || "-",
+            qty.toString(),
+            item.unit || "NOS",
+            rate.toFixed(2),
+            `${taxRate}%`,
+            amount.toFixed(2),
+          ];
+        }
+      });
 
       autoTable(doc, {
         startY: y,
-        head: [["#", "Description of Goods", "HSN", "Qty", `Rate (${activeSymbol})`, `Amount (${activeSymbol})`]],
-        body: tableData,
+        head: [headers],
+        body: tableRows,
         theme: "grid",
         headStyles: {
-          fillColor: [30, 41, 59],
-          textColor: [255, 255, 255],
-          fontSize: 8.5,
+          fillColor: [242, 245, 250],
+          textColor: [30, 30, 30],
+          fontSize: 8,
           fontStyle: "bold",
-          valign: "middle"
+          halign: "center",
+          lineWidth: 0.2,
+          lineColor: [180, 185, 195],
         },
-        columnStyles: {
-          0: { halign: "center", cellWidth: 14 },
-          1: { cellWidth: "auto" },
-          2: { halign: "center", cellWidth: 24 },
-          3: { halign: "right", cellWidth: 22 },
-          4: { halign: "right", cellWidth: 36 },
-          5: { halign: "right", cellWidth: 40 }
+        bodyStyles: {
+          fontSize: 8,
+          textColor: [40, 40, 40],
+          lineWidth: 0.2,
+          lineColor: [180, 185, 195],
         },
-        styles: { fontSize: 8.5, cellPadding: 2.8, font: "helvetica", textColor: [30, 30, 30] },
-        margin: { left: 15, right: 15, top: headerHeight, bottom: SAFE_BOTTOM }
+        columnStyles: isPackingList ? {
+          0: { halign: "center", cellWidth: 10 },
+          1: { halign: "left" },
+          2: { halign: "center", cellWidth: 20 },
+          3: { halign: "center", cellWidth: 20 },
+          4: { halign: "center", cellWidth: 25 },
+          5: { halign: "right", cellWidth: 20 },
+          6: { halign: "right", cellWidth: 20 },
+          7: { halign: "center", cellWidth: 15 },
+        } : (isChallan && !showChallanPrices) ? {
+          0: { halign: "center", cellWidth: 12 },
+          1: { halign: "left" },
+          2: { halign: "center", cellWidth: 25 },
+          3: { halign: "right", cellWidth: 25 },
+          4: { halign: "center", cellWidth: 20 },
+        } : {
+          0: { halign: "center", cellWidth: 10 },
+          1: { halign: "left" },
+          2: { halign: "center", cellWidth: 20 },
+          3: { halign: "right", cellWidth: 15 },
+          4: { halign: "center", cellWidth: 15 },
+          5: { halign: "right", cellWidth: 22 },
+          6: { halign: "right", cellWidth: 15 },
+          7: { halign: "right", cellWidth: 25 },
+        },
+        margin: { left: 15, right: 15, top: headerHeight },
       });
 
-      return (doc as any).lastAutoTable.finalY + 6;
+      return (doc as any).lastAutoTable.finalY + 5;
     },
 
     // -------------------------------------------------------------
@@ -587,14 +957,18 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
     // -------------------------------------------------------------
     totals: (y) => {
       const activeSymbol = getPdfCurrencySymbol(currency);
+      const showChallanPrices = data.showChallanPrices !== false;
+      if (type === DocumentType.DELIVERY_CHALLAN && !showChallanPrices) {
+        return y;
+      }
+
       const subtotal = items.reduce((acc, item) => acc + item.quantity * item.rate, 0);
       const totalTax = items.reduce((acc, item) => acc + (item.quantity * item.rate * (item.taxRate || 18)) / 100, 0);
       const grandTotal = Math.round(subtotal + totalTax - discount);
 
       const summaryRows: string[][] = [
         ["Subtotal:", `${activeSymbol} ${subtotal.toFixed(2)}`],
-        ["CGST (9%):", `${activeSymbol} ${(totalTax / 2).toFixed(2)}`],
-        ["SGST (9%):", `${activeSymbol} ${(totalTax / 2).toFixed(2)}`],
+        ["Tax Amount:", `${activeSymbol} ${totalTax.toFixed(2)}`],
         ["Grand Total:", `${activeSymbol} ${grandTotal.toFixed(2)}`]
       ];
 
@@ -610,7 +984,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             [{ content: "IFSC Code:", styles: { fontStyle: "bold" } }, business.ifscCode || "-"]
           ],
           theme: "grid",
-          headStyles: { fillColor: [17, 24, 39], fontSize: 8, fontStyle: "bold" },
+          headStyles: { fillColor: [242, 245, 250], textColor: [30, 30, 30], fontSize: 8, fontStyle: "bold" },
           styles: { fontSize: 8, cellPadding: 2 }
         });
       }
