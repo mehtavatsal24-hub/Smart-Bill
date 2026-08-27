@@ -284,14 +284,10 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         }
       });
 
-      // Calculate target rows so right column grid fills down to match left column height
-      const leftHeight = leftFinalY - blockStartY;
-      const approxRowHeight = 6.8;
-      const targetRows = Math.max(rightTableBody.length, Math.floor(leftHeight / approxRowHeight));
-
-      while (rightTableBody.length < targetRows) {
-        rightTableBody.push(["", "", "", ""]);
-      }
+      // Dynamically distribute right column row height so right grid matches left column height 100%
+      const totalLeftHeight = leftFinalY - blockStartY;
+      const numRightRows = Math.max(1, rightTableBody.length);
+      const targetRowHeight = totalLeftHeight / numRightRows;
 
       const c1W = 21;
       const c2W = (rightColWidth / 2) - c1W;
@@ -302,7 +298,9 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         theme: 'grid',
         styles: {
           fontSize: 8,
-          cellPadding: 2.2,
+          minCellHeight: targetRowHeight,
+          valign: 'middle',
+          cellPadding: { top: 2, bottom: 2, left: 2.5, right: 2.5 },
           textColor: [20, 20, 20],
           font: "helvetica",
           lineWidth: 0.2,
