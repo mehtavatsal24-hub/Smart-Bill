@@ -14,6 +14,9 @@ export interface BusinessDetails {
   phone: string;
   email: string;
   industry?: string;
+  country?: string;
+  state?: string;
+  currency?: string;
   logo?: string; // base64
   letterhead?: string; // base64
   signature?: string; // base64

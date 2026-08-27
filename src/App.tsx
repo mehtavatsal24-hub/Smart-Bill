@@ -67,7 +67,7 @@ import { FreightPackagingSection } from "./components/FreightPackagingSection";
 import { generateInvoicePDF, downloadInvoicePDF } from "./services/pdfService";
 import { generateInvoiceNotes, analyzeCustomerPatterns, analyzeLetterhead } from "./services/geminiService";
 import { HistoryList } from "./components/HistoryList";
-import { PDFCustomizer } from "./components/PDFCustomizer";
+import { COUNTRIES_DATA, INDUSTRY_OPTIONS, CURRENCY_LIST } from "./constants/locationData";
 import { saveToCloud, loadFromCloud } from "./services/dbService";
 import { isConfigValid, auth } from "./services/firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
@@ -1972,43 +1972,140 @@ export default function App() {
                 <CardContent className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Input 
-                      label="Business Name" 
+                      label="BUSINESS NAME" 
                       value={business.name} 
                       onChange={(e) => handleBusinessChange({ name: e.target.value })}
-                      placeholder="e.g. Acme Industrial Traders"
+                      placeholder="Apex Flanges & Fittings Pvt. Ltd."
                       error={businessErrors.name}
                     />
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                        INDUSTRY / BUSINESS LINE
+                      </label>
+                      <select
+                        value={business.industry || ""}
+                        onChange={(e) => handleBusinessChange({ industry: e.target.value })}
+                        className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                      >
+                        <option value="">-- Select Your Industry / Business Line --</option>
+                        {INDUSTRY_OPTIONS.map((ind) => (
+                          <option key={ind} value={ind}>{ind}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                        COUNTRY / REGION
+                      </label>
+                      <select
+                        value={business.country || "IN"}
+                        onChange={(e) => {
+                          const selectedCode = e.target.value;
+                          const foundCountry = COUNTRIES_DATA.find(c => c.code === selectedCode);
+                          if (foundCountry) {
+                            handleBusinessChange({
+                              country: selectedCode,
+                              currency: foundCountry.currency,
+                              state: foundCountry.states[0] || ""
+                            });
+                            if (setCurrency) setCurrency(foundCountry.currency);
+                          } else {
+                            handleBusinessChange({ country: selectedCode });
+                          }
+                        }}
+                        className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                      >
+                        {COUNTRIES_DATA.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.code} {c.name} ({c.currency})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                          STATE / REGION
+                        </label>
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                          {(COUNTRIES_DATA.find(c => c.code === (business.country || "IN"))?.name || "India").toUpperCase()} STATES
+                        </span>
+                      </div>
+                      {(() => {
+                        const currentCountryObj = COUNTRIES_DATA.find(c => c.code === (business.country || "IN"));
+                        const stateList = currentCountryObj?.states || [];
+                        return stateList.length > 0 ? (
+                          <select
+                            value={business.state || stateList[0] || ""}
+                            onChange={(e) => handleBusinessChange({ state: e.target.value })}
+                            className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                          >
+                            {stateList.map((st) => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Input 
+                            value={business.state || ""} 
+                            onChange={(e) => handleBusinessChange({ state: e.target.value })}
+                            placeholder="Enter state or region"
+                          />
+                        );
+                      })()}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">
+                        INVOICE CURRENCY
+                      </label>
+                      <select
+                        value={business.currency || "INR"}
+                        onChange={(e) => {
+                          const newCurr = e.target.value;
+                          handleBusinessChange({ currency: newCurr });
+                          if (setCurrency) setCurrency(newCurr);
+                        }}
+                        className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                      >
+                        {CURRENCY_LIST.map((cur) => (
+                          <option key={cur.code} value={cur.code}>
+                            {cur.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     <Input 
-                      label="GSTIN" 
+                      label={COUNTRIES_DATA.find(c => c.code === (business.country || "IN"))?.taxLabel || "GSTIN / TAX ID"} 
                       value={business.gstin} 
                       onChange={(e) => handleBusinessChange({ gstin: e.target.value })}
-                      placeholder="27AAAAA0000A1Z5"
+                      placeholder="e.g. 27AAAAA0000A1Z5"
                       error={businessErrors.gstin}
                     />
-                    <Input 
-                      label="Industry / Business Type" 
-                      value={business.industry || ""} 
-                      onChange={(e) => handleBusinessChange({ industry: e.target.value })}
-                      placeholder="e.g. Hardware, Electronics, Textiles, Services"
-                    />
+
                     <div className="md:col-span-2">
                       <Input 
-                        label="Address" 
+                        label="ADDRESS" 
                         value={business.address} 
                         onChange={(e) => handleBusinessChange({ address: e.target.value })}
                         placeholder="Full business address"
                       />
                     </div>
                     <Input 
-                      label="Phone" 
+                      label="PHONE" 
                       value={business.phone} 
                       onChange={(e) => handleBusinessChange({ phone: e.target.value })}
+                      placeholder="e.g. +91 98765 43210"
                       error={businessErrors.phone}
                     />
                     <Input 
-                      label="Email" 
+                      label="COMPANY EMAIL (FOR INVOICES)" 
                       value={business.email} 
                       onChange={(e) => handleBusinessChange({ email: e.target.value })}
+                      placeholder="e.g. billing@company.com"
                       error={businessErrors.email}
                     />
                     <div className="md:col-span-2">
@@ -2334,16 +2431,6 @@ export default function App() {
                         })}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="pt-8 border-t border-zinc-100">
-                    <PDFCustomizer 
-                      settings={layoutSettings}
-                      onChange={(newSettings) => {
-                        setLayoutSettings(newSettings);
-                        safeSave("pdf_layout_settings", newSettings, user?.uid);
-                      }}
-                    />
                   </div>
 
                     <Button 
