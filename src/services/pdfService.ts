@@ -134,7 +134,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
       const blockStartY = (doc as any).lastAutoTable.finalY;
 
-      // 2. Prepare Left Column Rows with Bold Labels & Equal Padding (NO inner horizontal lines)
+      // 2. Prepare Left Column Rows with Bold Labels & Bold Names (NO inner horizontal lines)
       const leftRows: string[][] = [
         ["VENDOR DETAILS", ""],
         ["M/S -", business.name || "-"],
@@ -144,6 +144,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       if (business.email) leftRows.push(["E-Mail -", business.email]);
       if (business.phone) leftRows.push(["Phone -", business.phone]);
       if (business.gstin) leftRows.push(["GSTIN -", business.gstin]);
+      if (business.country && !business.gstin) leftRows.push(["State -", business.state || business.country]);
 
       leftRows.push(["BUYER & CONSIGNEE DETAILS", ""]);
       leftRows.push(["Billed To (Buyer) -", customer.name || "-"]);
@@ -166,17 +167,23 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
           font: "helvetica"
         },
         columnStyles: {
-          0: { cellWidth: 32, fontStyle: 'bold', textColor: [40, 40, 40] },
-          1: { cellWidth: leftColWidth - 32, fontStyle: 'normal' }
+          0: { cellWidth: 34, fontStyle: 'bold', textColor: [30, 30, 30] },
+          1: { cellWidth: leftColWidth - 34, fontStyle: 'normal' }
         },
         didParseCell: (data) => {
           if (data.cell.raw === "VENDOR DETAILS" || data.cell.raw === "BUYER & CONSIGNEE DETAILS") {
-            data.cell.styles.fillColor = [245, 247, 250];
+            data.cell.styles.fillColor = [242, 245, 250];
             data.cell.styles.fontStyle = 'bold';
-            data.cell.styles.textColor = [40, 40, 40];
+            data.cell.styles.textColor = [30, 30, 30];
             data.cell.styles.fontSize = 8;
             data.cell.styles.cellPadding = { top: 3, bottom: 3, left: 3, right: 3 };
             data.cell.colSpan = 2;
+          } else if (data.column.index === 1) {
+            const label = data.row.raw[0];
+            if (label === "M/S -" || label === "Billed To (Buyer) -" || label === "Shipped To (Consignee) -") {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [30, 30, 30];
+            }
           }
         },
         didDrawCell: (data) => {
@@ -192,7 +199,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
       const leftFinalY = (doc as any).lastAutoTable.finalY;
 
-      // 3. Build Right Column Pairs (Strict Filtering - ONLY Non-Empty Values!)
+      // 3. Build Right Column Pairs (Strict Row-by-Row Filtering - ONLY Non-Empty Values!)
       const docLabel = type === DocumentType.QUOTATION 
         ? "Quotation No." 
         : (type === DocumentType.PURCHASE_ORDER 
@@ -203,28 +210,31 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             
       const dateFormatted = date ? format(new Date(date), "dd-MM-yyyy") : "";
 
-      const kvPairs: Array<{ k: string; v: string }> = [
-        { k: `${docLabel}:`, v: id },
+      const pairRow1: Array<{ k: string; v: string }> = [
+        { k: `${docLabel}:`, v: id }
       ];
-      if (dateFormatted) kvPairs.push({ k: "Dated:", v: dateFormatted });
+      if (dateFormatted) pairRow1.push({ k: "Dated:", v: dateFormatted });
 
-      if (poNumber && poNumber.trim() && poNumber !== "-") {
-        kvPairs.push({ k: "Order No.:", v: poNumber });
-      }
-      if (poDate && poDate.trim() && poDate !== "-") {
-        kvPairs.push({ k: "Order Date:", v: format(new Date(poDate), "dd-MM-yyyy") });
-      }
-
+      const pairRow2: Array<{ k: string; v: string }> = [];
       if (dispatchRef && dispatchRef.trim() && dispatchRef !== "-") {
-        kvPairs.push({ k: "Delivery Ref:", v: dispatchRef });
+        pairRow2.push({ k: "Delivery Note:", v: dispatchRef });
       }
       if (modeOfPayment && modeOfPayment.trim() && modeOfPayment !== "-") {
-        kvPairs.push({ k: "Mode of Payment:", v: modeOfPayment });
+        pairRow2.push({ k: "Mode of Payment:", v: modeOfPayment });
       }
 
+      const pairRow3: Array<{ k: string; v: string }> = [];
+      if (poNumber && poNumber.trim() && poNumber !== "-") {
+        pairRow3.push({ k: "Order No.:", v: poNumber });
+      }
+      if (poDate && poDate.trim() && poDate !== "-") {
+        pairRow3.push({ k: "Order Date:", v: format(new Date(poDate), "dd-MM-yyyy") });
+      }
+
+      const pairRow4: Array<{ k: string; v: string }> = [];
       const paymentTermsText = paymentTermsCustom || (paymentTermsDays ? `${paymentTermsDays} ${paymentTermsUnit || "Days"}` : "");
       if (paymentTermsText && paymentTermsText.trim() && paymentTermsText !== "-") {
-        kvPairs.push({ k: "Payment Terms:", v: paymentTermsText });
+        pairRow4.push({ k: "Payment Terms:", v: paymentTermsText });
       }
 
       const dueOrValid = type === DocumentType.QUOTATION 
@@ -232,46 +242,49 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         : dueDate;
 
       if (dueOrValid && dueOrValid.trim() && dueOrValid !== "-") {
-        kvPairs.push({ k: type === DocumentType.QUOTATION ? "Valid Until:" : "Terms / Due Date:", v: dueOrValid });
+        pairRow4.push({ k: type === DocumentType.QUOTATION ? "Valid Until:" : "Terms / Due Date:", v: dueOrValid });
       }
 
+      const pairRow5: Array<{ k: string; v: string }> = [];
       const dispatchViaText = despatchedThrough || transport || vehicleNo;
       if (dispatchViaText && dispatchViaText.trim() && dispatchViaText !== "-") {
-        kvPairs.push({ k: "Dispatch Via:", v: dispatchViaText });
+        pairRow5.push({ k: "Dispatch Via:", v: dispatchViaText });
       }
 
       const destText = destination || finalDestination;
       if (destText && destText.trim() && destText !== "-") {
-        kvPairs.push({ k: "Destination:", v: destText });
+        pairRow5.push({ k: "Destination:", v: destText });
       }
 
+      const pairRow6: Array<{ k: string; v: string }> = [];
       if (preCarriageBy && preCarriageBy.trim() && preCarriageBy !== "-") {
-        kvPairs.push({ k: "Dispatch Mode:", v: preCarriageBy });
+        pairRow6.push({ k: "Dispatch Mode:", v: preCarriageBy });
       }
       if (placeOfReceipt && placeOfReceipt.trim() && placeOfReceipt !== "-") {
-        kvPairs.push({ k: "Place of Receipt:", v: placeOfReceipt });
+        pairRow6.push({ k: "Place of Receipt:", v: placeOfReceipt });
       }
 
+      const pairRow7: Array<{ k: string; v: string }> = [];
       if (noOfPackages && noOfPackages.trim() && noOfPackages !== "-") {
-        kvPairs.push({ k: "No. of Packages:", v: noOfPackages });
+        pairRow7.push({ k: "No. of Packages:", v: noOfPackages });
       }
       if (transportationReason && transportationReason.trim() && transportationReason !== "-" && transportationReason !== "Supply") {
-        kvPairs.push({ k: "Reason:", v: transportationReason });
+        pairRow7.push({ k: "Reason:", v: transportationReason });
       }
 
-      // Group kvPairs into 2-column rows: [Key1, Val1, Key2, Val2]
-      const rightTableBody: string[][] = [];
-      for (let i = 0; i < kvPairs.length; i += 2) {
-        const p1 = kvPairs[i];
-        const p2 = kvPairs[i + 1];
-        if (p2) {
-          rightTableBody.push([p1.k, p1.v, p2.k, p2.v]);
+      const allRows: Array<Array<{ k: string; v: string }>> = [
+        pairRow1, pairRow2, pairRow3, pairRow4, pairRow5, pairRow6, pairRow7
+      ].filter(r => r.length > 0);
+
+      const rightTableBody: string[][] = allRows.map(row => {
+        if (row.length === 2) {
+          return [row[0].k, row[0].v, row[1].k, row[1].v];
         } else {
-          rightTableBody.push([p1.k, p1.v, "", ""]);
+          return [row[0].k, row[0].v, "", ""];
         }
-      }
+      });
 
-      const c1W = 20;
+      const c1W = 21;
       const c2W = (rightColWidth / 2) - c1W;
 
       autoTable(doc, {
@@ -280,16 +293,16 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         theme: 'grid',
         styles: {
           fontSize: 8,
-          cellPadding: 2.5,
+          cellPadding: 2.2,
           textColor: [20, 20, 20],
           font: "helvetica",
           lineWidth: 0.2,
           lineColor: [180, 185, 195]
         },
         columnStyles: {
-          0: { cellWidth: c1W, fontStyle: 'bold', textColor: [50, 50, 50] },
+          0: { cellWidth: c1W, fontStyle: 'bold', textColor: [30, 30, 30] },
           1: { cellWidth: c2W, fontStyle: 'normal' },
-          2: { cellWidth: c1W, fontStyle: 'bold', textColor: [50, 50, 50] },
+          2: { cellWidth: c1W, fontStyle: 'bold', textColor: [30, 30, 30] },
           3: { cellWidth: c2W, fontStyle: 'normal' },
         },
         didParseCell: (data) => {
