@@ -277,8 +277,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
               doc.line(data.cell.x, data.cell.y, data.cell.x + 90, data.cell.y);
               doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + 90, data.cell.y + data.cell.height);
             } else if (data.section === 'body' && Array.isArray(data.row.raw)) {
-              const label = data.row.raw[0];
-              const val = data.row.raw[1];
+              const label = String(data.row.raw[0] || "");
+              const val = String(data.row.raw[1] || "");
               if (label && label !== "VENDOR DETAILS") {
                 doc.setFillColor(255, 255, 255);
                 doc.rect(data.cell.x + 0.1, data.cell.y + 0.1, data.cell.width - 0.2, data.cell.height - 0.2, 'F');
@@ -296,7 +296,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
                 doc.setFont("helvetica", label === "M/S -" ? "bold" : "normal");
                 doc.setFontSize(7.5);
                 doc.setTextColor(30, 30, 30);
-                doc.text(` ${val || ""}`, paddingX + labelW, posY);
+                doc.text(` ${val}`, paddingX + labelW, posY);
               }
             }
           },
@@ -335,8 +335,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
               doc.line(data.cell.x, data.cell.y, data.cell.x + 90, data.cell.y);
               doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + 90, data.cell.y + data.cell.height);
             } else if (data.section === 'body' && Array.isArray(data.row.raw)) {
-              const label = data.row.raw[0];
-              const val = data.row.raw[1];
+              const label = String(data.row.raw[0] || "");
+              const val = String(data.row.raw[1] || "");
               if (label && label !== "CUSTOMER DETAILS") {
                 doc.setFillColor(255, 255, 255);
                 doc.rect(data.cell.x + 0.1, data.cell.y + 0.1, data.cell.width - 0.2, data.cell.height - 0.2, 'F');
@@ -355,7 +355,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
                 doc.setFont("helvetica", isBold ? "bold" : "normal");
                 doc.setFontSize(7.5);
                 doc.setTextColor(30, 30, 30);
-                doc.text(` ${val || ""}`, paddingX + labelW, posY);
+                doc.text(` ${val}`, paddingX + labelW, posY);
               }
             }
           },
@@ -460,8 +460,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             doc.line(data.cell.x, data.cell.y, data.cell.x + leftColWidth, data.cell.y);
             doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + leftColWidth, data.cell.y + data.cell.height);
           } else if (data.section === 'body' && Array.isArray(data.row.raw)) {
-            const label = data.row.raw[0];
-            const val = data.row.raw[1];
+            const label = String(data.row.raw[0] || "");
+            const val = String(data.row.raw[1] || "");
             if (label && label !== "VENDOR DETAILS" && label !== "BUYER & CONSIGNEE DETAILS") {
               doc.setFillColor(255, 255, 255);
               doc.rect(data.cell.x + 0.1, data.cell.y + 0.1, data.cell.width - 0.2, data.cell.height - 0.2, 'F');
@@ -482,7 +482,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
               doc.setFont("helvetica", isBoldVal ? "bold" : "normal");
               doc.setFontSize(7.5);
               doc.setTextColor(30, 30, 30);
-              doc.text(` ${val || ""}`, paddingX + labelW, posY);
+              doc.text(` ${val}`, paddingX + labelW, posY);
             }
           }
         },
