@@ -19,6 +19,7 @@ const SECTION_LABELS: Record<PDFSection, string> = {
   items_table: "Items Table",
   totals: "Totals & Grand Total",
   bank_details: "Bank Details",
+  incoterms: "Incoterms / Delivery Terms",
   terms: "Terms & Conditions",
   signature: "Signature Section",
 };
