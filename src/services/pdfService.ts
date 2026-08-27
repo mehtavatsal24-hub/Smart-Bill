@@ -260,7 +260,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             font: "helvetica"
           },
           columnStyles: {
-            0: { cellWidth: 90, fontStyle: 'normal' }
+            0: { cellWidth: 32, fontStyle: 'bold', textColor: [30, 30, 30] },
+            1: { cellWidth: 58, fontStyle: 'normal' }
           },
           didParseCell: (data) => {
             if (data.cell.raw === "VENDOR DETAILS") {
@@ -270,6 +271,9 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
               data.cell.styles.fontSize = 7.5;
               data.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 3, right: 3 };
               data.cell.colSpan = 2;
+            } else if (data.column.index === 1 && data.row.raw[0] === "M/S -") {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [30, 30, 30];
             }
           },
           didDrawCell: (data) => {
@@ -278,28 +282,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
               doc.setLineWidth(0.2);
               doc.line(data.cell.x, data.cell.y, data.cell.x + 90, data.cell.y);
               doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + 90, data.cell.y + data.cell.height);
-            } else if (data.section === 'body' && Array.isArray(data.row.raw)) {
-              const label = String(data.row.raw[0] || "");
-              const val = String(data.row.raw[1] || "");
-              if (label && label !== "VENDOR DETAILS") {
-                doc.setFillColor(255, 255, 255);
-                doc.rect(data.cell.x + 0.1, data.cell.y + 0.1, data.cell.width - 0.2, data.cell.height - 0.2, 'F');
-
-                const paddingX = data.cell.x + 3;
-                const posY = data.cell.y + (data.cell.height / 2) + 1.0;
-
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(7.5);
-                doc.setTextColor(30, 30, 30);
-                doc.text(label, paddingX, posY);
-
-                const labelW = doc.getTextWidth(label);
-                const isBoldVal = (label === "M/S -");
-                doc.setFont("helvetica", isBoldVal ? "bold" : "normal");
-                doc.setFontSize(7.5);
-                doc.setTextColor(30, 30, 30);
-                doc.text(` ${val}`, paddingX + labelW, posY);
-              }
             }
           },
           margin: { left: leftMargin, right: pageWidth - leftMargin - 90, top: headerHeight }
@@ -319,7 +301,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             font: "helvetica"
           },
           columnStyles: {
-            0: { cellWidth: 90, fontStyle: 'normal' }
+            0: { cellWidth: 34, fontStyle: 'bold', textColor: [30, 30, 30] },
+            1: { cellWidth: 56, fontStyle: 'normal' }
           },
           didParseCell: (data) => {
             if (data.cell.raw === "CUSTOMER DETAILS") {
@@ -329,6 +312,9 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
               data.cell.styles.fontSize = 7.5;
               data.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 3, right: 3 };
               data.cell.colSpan = 2;
+            } else if (data.column.index === 1 && (data.row.raw[0] === "M/S -" || data.row.raw[0] === "Shipped To (Consignee) -")) {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [30, 30, 30];
             }
           },
           didDrawCell: (data) => {
@@ -337,28 +323,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
               doc.setLineWidth(0.2);
               doc.line(data.cell.x, data.cell.y, data.cell.x + 90, data.cell.y);
               doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + 90, data.cell.y + data.cell.height);
-            } else if (data.section === 'body' && Array.isArray(data.row.raw)) {
-              const label = String(data.row.raw[0] || "");
-              const val = String(data.row.raw[1] || "");
-              if (label && label !== "CUSTOMER DETAILS") {
-                doc.setFillColor(255, 255, 255);
-                doc.rect(data.cell.x + 0.1, data.cell.y + 0.1, data.cell.width - 0.2, data.cell.height - 0.2, 'F');
-
-                const paddingX = data.cell.x + 3;
-                const posY = data.cell.y + (data.cell.height / 2) + 1.0;
-
-                doc.setFont("helvetica", "bold");
-                doc.setFontSize(7.5);
-                doc.setTextColor(30, 30, 30);
-                doc.text(label, paddingX, posY);
-
-                const labelW = doc.getTextWidth(label);
-                const isBoldVal = (label === "M/S -" || label === "Shipped To (Consignee) -");
-                doc.setFont("helvetica", isBoldVal ? "bold" : "normal");
-                doc.setFontSize(7.5);
-                doc.setTextColor(30, 30, 30);
-                doc.text(` ${val}`, paddingX + labelW, posY);
-              }
             }
           },
           margin: { left: leftMargin + 90, right: rightMargin, top: headerHeight }
@@ -400,7 +364,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
 
       const blockStartY = (doc as any).lastAutoTable.finalY;
 
-      // 2. Prepare Left Column Rows with Bold Labels & Bold Names (NO inner horizontal lines & Tight Inline Gap!)
+      // 2. Prepare Left Column Rows with Bold Labels & Bold Names (NO inner horizontal lines)
       const leftRows: string[][] = [
         ["VENDOR DETAILS", ""],
         ["M/S -", business.name || "-"],
@@ -433,7 +397,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
           font: "helvetica"
         },
         columnStyles: {
-          0: { cellWidth: leftColWidth, fontStyle: 'normal' }
+          0: { cellWidth: 34, fontStyle: 'bold', textColor: [30, 30, 30] },
+          1: { cellWidth: leftColWidth - 34, fontStyle: 'normal' }
         },
         didParseCell: (data) => {
           if (data.cell.raw === "VENDOR DETAILS" || data.cell.raw === "BUYER & CONSIGNEE DETAILS") {
@@ -443,6 +408,12 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             data.cell.styles.fontSize = 7.5;
             data.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 3, right: 3 };
             data.cell.colSpan = 2;
+          } else if (data.column.index === 1) {
+            const label = data.row.raw[0];
+            if (label === "M/S -" || label === "Billed To (Buyer) -" || label === "Shipped To (Consignee) -") {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [30, 30, 30];
+            }
           }
         },
         didDrawCell: (data) => {
@@ -451,31 +422,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             doc.setLineWidth(0.2);
             doc.line(data.cell.x, data.cell.y, data.cell.x + leftColWidth, data.cell.y);
             doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + leftColWidth, data.cell.y + data.cell.height);
-          } else if (data.section === 'body' && Array.isArray(data.row.raw)) {
-            const label = String(data.row.raw[0] || "");
-            const val = String(data.row.raw[1] || "");
-            if (label && label !== "VENDOR DETAILS" && label !== "BUYER & CONSIGNEE DETAILS") {
-              doc.setFillColor(255, 255, 255);
-              doc.rect(data.cell.x + 0.1, data.cell.y + 0.1, data.cell.width - 0.2, data.cell.height - 0.2, 'F');
-
-              const paddingX = data.cell.x + 3;
-              const posY = data.cell.y + (data.cell.height / 2) + 1.0;
-
-              // Draw Label in Bold
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.5);
-              doc.setTextColor(30, 30, 30);
-              doc.text(label, paddingX, posY);
-
-              const labelW = doc.getTextWidth(label);
-
-              // Draw Value in Normal (or Bold for Name) with ONLY a small natural gap (1.5mm)
-              const isBoldVal = (label === "M/S -" || label === "Billed To (Buyer) -" || label === "Shipped To (Consignee) -");
-              doc.setFont("helvetica", isBoldVal ? "bold" : "normal");
-              doc.setFontSize(7.5);
-              doc.setTextColor(30, 30, 30);
-              doc.text(` ${val}`, paddingX + labelW, posY);
-            }
           }
         },
         margin: { left: leftMargin, right: pageWidth - leftMargin - leftColWidth, top: headerHeight },
@@ -549,18 +495,20 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         pairRow1, pairRow2, pairRow3, pairRow4, pairRow5, pairRow6, pairRow7
       ].filter(r => r.length > 0);
 
-      // 2-Column table format matching Image 2 reference layout
-      const rightTableBody: any[][] = allRows.map(row => {
+      const rightTableBody: string[][] = allRows.map(row => {
         if (row.length === 2) {
-          return [row[0], row[1]];
+          return [row[0].k, formatDateClean(row[0].v), row[1].k, formatDateClean(row[1].v)];
         } else {
-          return [row[0], null];
+          return [row[0].k, formatDateClean(row[0].v), "", ""];
         }
       });
 
       const totalLeftHeight = leftFinalY - blockStartY;
       const numRightRows = Math.max(1, rightTableBody.length);
       const calculatedMinHeight = totalLeftHeight / numRightRows;
+
+      const c1W = 21;
+      const c2W = (rightColWidth / 2) - c1W;
 
       autoTable(doc, {
         startY: blockStartY,
@@ -577,55 +525,15 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
           lineColor: [180, 185, 195]
         },
         columnStyles: {
-          0: { cellWidth: rightColWidth / 2 },
-          1: { cellWidth: rightColWidth / 2 },
+          0: { cellWidth: c1W, fontStyle: 'bold', textColor: [30, 30, 30] },
+          1: { cellWidth: c2W, fontStyle: 'normal' },
+          2: { cellWidth: c1W, fontStyle: 'bold', textColor: [30, 30, 30] },
+          3: { cellWidth: c2W, fontStyle: 'normal' },
         },
         didParseCell: (data) => {
-          const rawRow = data.row.raw as any[];
-          if (rawRow && rawRow[1] === null && data.column.index === 0) {
-            data.cell.colSpan = 2;
-          }
-        },
-        didDrawCell: (data) => {
-          if (data.section === 'body') {
-            const rawItem = data.cell.raw as { k: string; v: string } | null;
-            if (rawItem && rawItem.k) {
-              // Fill cell background white to clear default text rendering
-              doc.setFillColor(255, 255, 255);
-              doc.rect(data.cell.x + 0.1, data.cell.y + 0.1, data.cell.width - 0.2, data.cell.height - 0.2, 'F');
-
-              const paddingX = data.cell.x + 2.5;
-              const availW = data.cell.width - 5;
-              const formattedVal = formatDateClean(rawItem.v);
-
-              doc.setFont("helvetica", "bold");
-              doc.setFontSize(7.5);
-              const keyWidth = doc.getTextWidth(rawItem.k);
-
-              doc.setFont("helvetica", "normal");
-              doc.setFontSize(7.5);
-              const valWidth = doc.getTextWidth(` ${formattedVal}`);
-
-              // Auto text wrap: Check if Key + Value fits on 1 single line
-              if ((keyWidth + valWidth) <= availW) {
-                const centerY = data.cell.y + (data.cell.height / 2) + 1.0;
-                doc.setFont("helvetica", "bold");
-                doc.text(rawItem.k, paddingX, centerY);
-                doc.setFont("helvetica", "normal");
-                doc.text(` ${formattedVal}`, paddingX + keyWidth, centerY);
-              } else {
-                // Multi-line wrap inside cell: Line 1 = Key (Bold), Line 2 = Value (Normal)
-                const line1Y = data.cell.y + (data.cell.height / 2) - 1.2;
-                const line2Y = data.cell.y + (data.cell.height / 2) + 2.5;
-
-                doc.setFont("helvetica", "bold");
-                doc.text(rawItem.k, paddingX, line1Y);
-
-                doc.setFont("helvetica", "normal");
-                const wrappedVal = doc.splitTextToSize(formattedVal, availW);
-                doc.text(wrappedVal[0] || "", paddingX, line2Y);
-              }
-            }
+          const rawRow = data.row.raw as string[];
+          if (rawRow && rawRow[0] !== "" && rawRow[2] === "" && data.column.index === 1) {
+            data.cell.colSpan = 3;
           }
         },
         margin: { left: leftMargin + leftColWidth, right: rightMargin, top: headerHeight },
