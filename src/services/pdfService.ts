@@ -284,6 +284,15 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         }
       });
 
+      // Calculate target rows so right column grid fills down to match left column height
+      const leftHeight = leftFinalY - blockStartY;
+      const approxRowHeight = 6.8;
+      const targetRows = Math.max(rightTableBody.length, Math.floor(leftHeight / approxRowHeight));
+
+      while (rightTableBody.length < targetRows) {
+        rightTableBody.push(["", "", "", ""]);
+      }
+
       const c1W = 21;
       const c2W = (rightColWidth / 2) - c1W;
 
@@ -306,7 +315,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
           3: { cellWidth: c2W, fontStyle: 'normal' },
         },
         didParseCell: (data) => {
-          if (data.row.raw[2] === "" && data.column.index === 1) {
+          const rawRow = data.row.raw as string[];
+          if (rawRow && rawRow[0] !== "" && rawRow[2] === "" && data.column.index === 1) {
             data.cell.colSpan = 3;
           }
         },
