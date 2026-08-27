@@ -162,7 +162,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         theme: 'plain',
         styles: {
           fontSize: 8,
-          cellPadding: { top: 1.8, bottom: 1.8, left: 3, right: 3 },
+          cellPadding: { top: 1.0, bottom: 1.0, left: 3, right: 3 },
           textColor: [20, 20, 20],
           font: "helvetica"
         },
@@ -176,7 +176,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
             data.cell.styles.fontStyle = 'bold';
             data.cell.styles.textColor = [30, 30, 30];
             data.cell.styles.fontSize = 8;
-            data.cell.styles.cellPadding = { top: 3, bottom: 3, left: 3, right: 3 };
+            data.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 3, right: 3 };
             data.cell.colSpan = 2;
           } else if (data.column.index === 1) {
             const label = data.row.raw[0];
@@ -284,11 +284,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         }
       });
 
-      // Dynamically distribute right column row height so right grid matches left column height 100%
-      const totalLeftHeight = leftFinalY - blockStartY;
-      const numRightRows = Math.max(1, rightTableBody.length);
-      const targetRowHeight = totalLeftHeight / numRightRows;
-
       const c1W = 21;
       const c2W = (rightColWidth / 2) - c1W;
 
@@ -298,8 +293,6 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         theme: 'grid',
         styles: {
           fontSize: 8,
-          minCellHeight: targetRowHeight,
-          valign: 'middle',
           cellPadding: { top: 2, bottom: 2, left: 2.5, right: 2.5 },
           textColor: [20, 20, 20],
           font: "helvetica",
