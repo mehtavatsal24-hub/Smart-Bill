@@ -35,6 +35,7 @@ export type PDFSection =
   | "items_table" 
   | "totals" 
   | "bank_details" 
+  | "incoterms"
   | "terms" 
   | "signature";
 
@@ -47,6 +48,7 @@ export interface PDFLayoutSettings {
   fontFamily?: string;
   headerHeight?: number; // in mm
   footerHeight?: number; // in mm
+  hideForPreprintedLetterhead?: boolean;
 }
 
 export interface CustomerDetails {
