@@ -111,6 +111,224 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       const leftMargin = 15;
       const rightMargin = 15;
       const totalWidth = pageWidth - leftMargin - rightMargin; // 180mm
+
+      if (type !== DocumentType.TAX_INVOICE) {
+        // --- SIMPLE DOC / QUOTATION / PO / CHALLAN / PACKING LIST LAYOUT (Matching media_1787819639799.png) ---
+        
+        // 1. Title Banner Bar
+        const docTitle = type === DocumentType.QUOTATION 
+          ? "QUOTATION" 
+          : (type === DocumentType.PURCHASE_ORDER 
+            ? "PURCHASE ORDER" 
+            : (type === DocumentType.PROFORMA_INVOICE 
+              ? "PROFORMA INVOICE" 
+              : (type === DocumentType.PACKING_LIST 
+                ? "PACKING LIST" 
+                : "DELIVERY CHALLAN")));
+
+        autoTable(doc, {
+          startY: y,
+          head: [[docTitle]],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [242, 245, 250],
+            textColor: [30, 30, 30],
+            fontSize: 10,
+            fontStyle: 'bold',
+            halign: 'center',
+            cellPadding: 3,
+            lineWidth: 0.2,
+            lineColor: [180, 185, 195],
+          },
+          margin: { left: leftMargin, right: rightMargin, top: headerHeight },
+        });
+
+        const topRefStartY = (doc as any).lastAutoTable.finalY;
+
+        // 2. Top Document Reference Row(s)
+        const docLabel = type === DocumentType.QUOTATION 
+          ? "Quotation No." 
+          : (type === DocumentType.PURCHASE_ORDER 
+            ? "P.O. No." 
+            : (type === DocumentType.PACKING_LIST 
+              ? "Packing List No." 
+              : (type === DocumentType.PROFORMA_INVOICE 
+                ? "Proforma Invoice No." 
+                : "Challan No.")));
+
+        const dateLabel = type === DocumentType.QUOTATION 
+          ? "Quotation Date" 
+          : (type === DocumentType.PURCHASE_ORDER 
+            ? "P.O. Date" 
+            : "Date");
+
+        const dateFormatted = date ? format(new Date(date), "dd-MM-yyyy") : "";
+
+        const topRefRows: string[][] = [
+          [`${docLabel} - ${id}`, `${dateLabel} - ${dateFormatted}`]
+        ];
+
+        const paymentTermsText = paymentTermsCustom || (paymentTermsDays ? `${paymentTermsDays} ${paymentTermsUnit || "Days"}` : "");
+        const dueOrValid = type === DocumentType.QUOTATION 
+          ? (validUntilDate ? format(new Date(validUntilDate), "dd-MM-yyyy") : "") 
+          : dueDate;
+
+        if (paymentTermsText && paymentTermsText.trim() && paymentTermsText !== "-") {
+          if (dueOrValid && dueOrValid.trim() && dueOrValid !== "-") {
+            const validLabel = type === DocumentType.QUOTATION ? "Valid Until" : "Terms / Due Date";
+            topRefRows.push([`Payment Terms - ${paymentTermsText}`, `${validLabel} - ${dueOrValid}`]);
+          } else {
+            topRefRows.push([`Payment Terms - ${paymentTermsText}`, ""]);
+          }
+        } else if (dueOrValid && dueOrValid.trim() && dueOrValid !== "-") {
+          const validLabel = type === DocumentType.QUOTATION ? "Valid Until" : "Terms / Due Date";
+          topRefRows.push([`${validLabel} - ${dueOrValid}`, ""]);
+        }
+
+        autoTable(doc, {
+          startY: topRefStartY,
+          body: topRefRows,
+          theme: 'grid',
+          styles: {
+            fontSize: 8,
+            cellPadding: 3,
+            textColor: [30, 30, 30],
+            font: "helvetica",
+            lineWidth: 0.2,
+            lineColor: [180, 185, 195],
+            fontStyle: 'bold'
+          },
+          columnStyles: {
+            0: { cellWidth: 90 },
+            1: { cellWidth: 90 }
+          },
+          didParseCell: (data) => {
+            const rawRow = data.row.raw as string[];
+            if (rawRow && rawRow[1] === "" && data.column.index === 0) {
+              data.cell.colSpan = 2;
+            }
+          },
+          margin: { left: leftMargin, right: rightMargin, top: headerHeight }
+        });
+
+        const bottomBlockStartY = (doc as any).lastAutoTable.finalY;
+
+        // 3. Bottom 2 Equal Columns (90mm Left Vendor, 90mm Right Customer)
+        const vendorRows: string[][] = [
+          ["VENDOR DETAILS", ""],
+          ["M/S -", business.name || "-"],
+        ];
+        if (business.address) vendorRows.push(["Address -", business.address]);
+        if (business.phone) vendorRows.push(["Phone -", business.phone]);
+        if (business.email) vendorRows.push(["E-Mail -", business.email]);
+        if (business.gstin) vendorRows.push(["GSTIN/UIN -", business.gstin]);
+        if (business.country || business.state) vendorRows.push(["State -", business.state || business.country || ""]);
+
+        const customerRows: string[][] = [
+          ["CUSTOMER DETAILS", ""],
+          ["M/S -", customer.name || "-"],
+        ];
+        if (customer.address) customerRows.push(["Address -", customer.address]);
+        if (customer.phone) customerRows.push(["Phone -", customer.phone]);
+        if (customer.email) customerRows.push(["E-Mail -", customer.email]);
+        if (customer.gstin) customerRows.push(["GSTIN/UIN -", customer.gstin]);
+        customerRows.push(["Place of Supply -", "India"]);
+        if (consigneeName) customerRows.push(["Shipped To (Consignee) -", consigneeName]);
+        if (consigneeAddress) customerRows.push(["Ship Addr -", consigneeAddress]);
+
+        // Render Vendor Column (x = 15 to x = 105)
+        autoTable(doc, {
+          startY: bottomBlockStartY,
+          body: vendorRows,
+          theme: 'plain',
+          styles: {
+            fontSize: 8,
+            cellPadding: { top: 1.0, bottom: 1.0, left: 3, right: 3 },
+            textColor: [20, 20, 20],
+            font: "helvetica"
+          },
+          columnStyles: {
+            0: { cellWidth: 32, fontStyle: 'bold', textColor: [30, 30, 30] },
+            1: { cellWidth: 58, fontStyle: 'normal' }
+          },
+          didParseCell: (data) => {
+            if (data.cell.raw === "VENDOR DETAILS") {
+              data.cell.styles.fillColor = [242, 245, 250];
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [30, 30, 30];
+              data.cell.styles.fontSize = 8;
+              data.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 3, right: 3 };
+              data.cell.colSpan = 2;
+            } else if (data.column.index === 1 && data.row.raw[0] === "M/S -") {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [30, 30, 30];
+            }
+          },
+          didDrawCell: (data) => {
+            if (data.cell.raw === "VENDOR DETAILS") {
+              doc.setDrawColor(180, 185, 195);
+              doc.setLineWidth(0.2);
+              doc.line(data.cell.x, data.cell.y, data.cell.x + 90, data.cell.y);
+              doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + 90, data.cell.y + data.cell.height);
+            }
+          },
+          margin: { left: leftMargin, right: pageWidth - leftMargin - 90, top: headerHeight }
+        });
+
+        const leftFinalY = (doc as any).lastAutoTable.finalY;
+
+        // Render Customer Column (x = 105 to x = 195)
+        autoTable(doc, {
+          startY: bottomBlockStartY,
+          body: customerRows,
+          theme: 'plain',
+          styles: {
+            fontSize: 8,
+            cellPadding: { top: 1.0, bottom: 1.0, left: 3, right: 3 },
+            textColor: [20, 20, 20],
+            font: "helvetica"
+          },
+          columnStyles: {
+            0: { cellWidth: 34, fontStyle: 'bold', textColor: [30, 30, 30] },
+            1: { cellWidth: 56, fontStyle: 'normal' }
+          },
+          didParseCell: (data) => {
+            if (data.cell.raw === "CUSTOMER DETAILS") {
+              data.cell.styles.fillColor = [242, 245, 250];
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [30, 30, 30];
+              data.cell.styles.fontSize = 8;
+              data.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 3, right: 3 };
+              data.cell.colSpan = 2;
+            } else if (data.column.index === 1 && (data.row.raw[0] === "M/S -" || data.row.raw[0] === "Shipped To (Consignee) -")) {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [30, 30, 30];
+            }
+          },
+          didDrawCell: (data) => {
+            if (data.cell.raw === "CUSTOMER DETAILS") {
+              doc.setDrawColor(180, 185, 195);
+              doc.setLineWidth(0.2);
+              doc.line(data.cell.x, data.cell.y, data.cell.x + 90, data.cell.y);
+              doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + 90, data.cell.y + data.cell.height);
+            }
+          },
+          margin: { left: leftMargin + 90, right: rightMargin, top: headerHeight }
+        });
+
+        const rightFinalY = (doc as any).lastAutoTable.finalY;
+        const finalSectionY = Math.max(leftFinalY, rightFinalY);
+
+        // Outer border box matching exact height + vertical divider line down the middle (x = 105)
+        doc.setDrawColor(180, 185, 195);
+        doc.setLineWidth(0.3);
+        doc.rect(leftMargin, topRefStartY, totalWidth, finalSectionY - topRefStartY);
+        doc.line(leftMargin + 90, bottomBlockStartY, leftMargin + 90, finalSectionY);
+
+        return finalSectionY + 8;
+      }
+
+      // --- TAX INVOICE FULL LOGISTICS LAYOUT ---
       const leftColWidth = 95;
       const rightColWidth = totalWidth - leftColWidth; // 85mm
 
@@ -200,14 +418,7 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
       const leftFinalY = (doc as any).lastAutoTable.finalY;
 
       // 3. Build Right Column Pairs (Strict Row-by-Row Filtering - ONLY Non-Empty Values!)
-      const docLabel = type === DocumentType.QUOTATION 
-        ? "Quotation No." 
-        : (type === DocumentType.PURCHASE_ORDER 
-          ? "PO No." 
-          : (type === DocumentType.PACKING_LIST 
-            ? "Packing List No." 
-            : "Invoice No."));
-            
+      const docLabel = "Invoice No.";
       const dateFormatted = date ? format(new Date(date), "dd-MM-yyyy") : "";
 
       const pairRow1: Array<{ k: string; v: string }> = [
@@ -237,12 +448,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         pairRow4.push({ k: "Payment Terms:", v: paymentTermsText });
       }
 
-      const dueOrValid = type === DocumentType.QUOTATION 
-        ? (validUntilDate ? format(new Date(validUntilDate), "dd-MM-yyyy") : "") 
-        : dueDate;
-
-      if (dueOrValid && dueOrValid.trim() && dueOrValid !== "-") {
-        pairRow4.push({ k: type === DocumentType.QUOTATION ? "Valid Until:" : "Terms / Due Date:", v: dueOrValid });
+      if (dueDate && dueDate.trim() && dueDate !== "-") {
+        pairRow4.push({ k: "Terms / Due Date:", v: dueDate });
       }
 
       const pairRow5: Array<{ k: string; v: string }> = [];
