@@ -483,16 +483,18 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         pairRow1, pairRow2, pairRow3, pairRow4, pairRow5, pairRow6, pairRow7
       ].filter(r => r.length > 0);
 
-      const rightTableBody: string[][] = allRows.map(row => {
+      // 2-Column table format matching Image 2 reference layout
+      const rightTableBody: any[][] = allRows.map(row => {
         if (row.length === 2) {
-          return [row[0].k, row[0].v, row[1].k, row[1].v];
+          return [row[0], row[1]];
         } else {
-          return [row[0].k, row[0].v, "", ""];
+          return [row[0], null];
         }
       });
 
-      const c1W = 21;
-      const c2W = (rightColWidth / 2) - c1W;
+      const totalLeftHeight = leftFinalY - blockStartY;
+      const numRightRows = Math.max(1, rightTableBody.length);
+      const calculatedMinHeight = totalLeftHeight / numRightRows;
 
       autoTable(doc, {
         startY: blockStartY,
@@ -500,6 +502,8 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
         theme: 'grid',
         styles: {
           fontSize: 8,
+          minCellHeight: calculatedMinHeight,
+          valign: 'middle',
           cellPadding: { top: 2, bottom: 2, left: 2.5, right: 2.5 },
           textColor: [20, 20, 20],
           font: "helvetica",
@@ -507,15 +511,40 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<jsPDF> {
           lineColor: [180, 185, 195]
         },
         columnStyles: {
-          0: { cellWidth: c1W, fontStyle: 'bold', textColor: [30, 30, 30] },
-          1: { cellWidth: c2W, fontStyle: 'normal' },
-          2: { cellWidth: c1W, fontStyle: 'bold', textColor: [30, 30, 30] },
-          3: { cellWidth: c2W, fontStyle: 'normal' },
+          0: { cellWidth: rightColWidth / 2 },
+          1: { cellWidth: rightColWidth / 2 },
         },
         didParseCell: (data) => {
-          const rawRow = data.row.raw as string[];
-          if (rawRow && rawRow[0] !== "" && rawRow[2] === "" && data.column.index === 1) {
-            data.cell.colSpan = 3;
+          const rawRow = data.row.raw as any[];
+          if (rawRow && rawRow[1] === null && data.column.index === 0) {
+            data.cell.colSpan = 2;
+          }
+        },
+        didDrawCell: (data) => {
+          if (data.section === 'body') {
+            const rawItem = data.cell.raw as { k: string; v: string } | null;
+            if (rawItem && rawItem.k) {
+              // Fill cell background white to clear default text rendering
+              doc.setFillColor(255, 255, 255);
+              doc.rect(data.cell.x + 0.1, data.cell.y + 0.1, data.cell.width - 0.2, data.cell.height - 0.2, 'F');
+
+              const paddingX = data.cell.x + 2.5;
+              const centerY = data.cell.y + (data.cell.height / 2) + 1.2;
+
+              // Draw Key (Bold)
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8);
+              doc.setTextColor(30, 30, 30);
+              doc.text(rawItem.k, paddingX, centerY);
+
+              const keyWidth = doc.getTextWidth(rawItem.k);
+
+              // Draw Value (Normal)
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(8);
+              doc.setTextColor(30, 30, 30);
+              doc.text(` ${rawItem.v}`, paddingX + keyWidth, centerY);
+            }
           }
         },
         margin: { left: leftMargin + leftColWidth, right: rightMargin, top: headerHeight },
